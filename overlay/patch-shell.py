@@ -120,7 +120,12 @@ SPECIFIC = [
                     }""",
      """                    values: {
                         const inGroup = win => (root.workspaceGroup * root.workspacesShown < win?.workspace?.id && win?.workspace?.id <= (root.workspaceGroup + 1) * root.workspacesShown)
-                        if (WM.compositor !== "hyprland") return root.windows.filter(inGroup)
+                        // A Hyprland workspace belongs to one output, so the
+                        // cell is already that output's view. A KWin desktop
+                        // spans every output, so restrict it here or windows
+                        // from the other screens land on top of these.
+                        if (WM.compositor !== "hyprland")
+                            return root.windows.filter(w => inGroup(w) && w.output === root.monitor?.name)
                         return ToplevelManager.toplevels.values.filter((toplevel) => {
                             const address = `0x${toplevel.HyprlandToplevel?.address}`
                             return inGroup(windowByAddress[address]);
@@ -204,9 +209,23 @@ SPECIFIC = [
             : WM.windowList.map(w => ({
                 appId: w.class ?? "",
                 activated: w.focused ?? false,
-                activate: () => WM.focusWindow(w.address)
+                address: w.address
             }));
         for (const toplevel of liveToplevels) {"""),
+
+    # The stand-ins carry an address rather than an activate() method: they go
+    # through a `list<var>` property on the way to the dock, and a plain data
+    # object survives that trip where a closure is not worth betting on.
+    ("modules/ii/bar/DocktoPanel.qml",
+     "                        entry.toplevels[next].activate()",
+     """                        const target = entry.toplevels[next]
+                        if (WM.compositor === "hyprland") target.activate()
+                        else WM.focusWindow(target.address)"""),
+    ("modules/ii/bar/DocktoPanel.qml",
+     "                            activeSlot.modelData.toplevels[next].activate()",
+     """                            const target = activeSlot.modelData.toplevels[next]
+                            if (WM.compositor === "hyprland") target.activate()
+                            else WM.focusWindow(target.address)"""),
 
     # --- launcher actions ---------------------------------------------------
     ("services/LauncherSearch.qml",

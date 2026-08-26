@@ -22,12 +22,19 @@ snap = bridge.build_snapshot(
         {"id": "{wB}", "appId": "zen", "desktops": []},
     ], "activeOutput": "eDP-1"},
     desktops, "u1")
+per_output = bridge.build_snapshot(
+    {"outputs": [{"name": "DP-1", "currentDesktop": "u2"},
+                 {"name": "DP-2", "currentDesktop": "gone"}]}, desktops, "u1")
+# an unknown per-output desktop falls back to the global current one
+assert per_output["outputs"] == [{"name": "DP-1", "current": 2},
+                                 {"name": "DP-2", "current": 1}]
 
 # position is 0-based on D-Bus, the shell wants Hyprland-style 1-based ids
 assert [w["id"] for w in snap["workspaces"]] == [1, 2]
 assert snap["workspaces"][1]["name"] == "Desktop 2", "unnamed desktops get a fallback label"
 assert snap["current"] == 1
 assert snap["activeOutput"] == "eDP-1"
+assert snap["outputs"] == []
 # the skin's non-Hyprland path reads niri's field names
 assert [w["is_active"] for w in snap["workspaces"]] == [True, False]
 assert snap["workspaces"][0]["idx"] == 1 and snap["workspaces"][0]["output"] == ""
@@ -48,7 +55,15 @@ assert wa["onAllDesktops"] is False
 assert bridge.build_snapshot({}, desktops, "gone")["current"] == 1
 assert bridge.build_snapshot({}, [], "gone")["current"] == 1
 
-js = bridge.move_script("{w-1}", 3)
-assert '"w-1"' in js and "want = 3" in js, js
+js = bridge.window_script("{w-1}", "move", "3")
+assert '"w-1"' in js and "x11DesktopNumber === 3" in js, js
+assert "workspace.activeWindow = w;" in bridge.window_script("w-1", "activate")
+assert "w.closeWindow();" in bridge.window_script("w-1", "close")
+try:
+    bridge.window_script("w-1", "explode")
+except ValueError:
+    pass
+else:
+    raise AssertionError("an unknown action must not silently produce a script")
 
 print("ok")

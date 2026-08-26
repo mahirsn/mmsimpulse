@@ -21,6 +21,7 @@ Scope {
     property var workspaceById: ({})
     property var activeWorkspace: null
     property string activeOutput: ""
+    property var outputs: []
 
     // Monitors come from Quickshell itself, which is already compositor
     // agnostic — no need to ask KWin. The `logical` shape matches NiriBackend
@@ -36,13 +37,17 @@ Scope {
         y: s.y,
         width: s.width,
         height: s.height,
-        scale: s.devicePixelRatio,
+        // Quickshell's screen geometry is already logical, unlike hyprctl's
+        // which is physical pixels plus a scale factor. Reporting the real
+        // device pixel ratio here makes the overview apply it twice and blow
+        // windows up on any scaled output.
+        scale: 1,
         // KWin reports no struts over D-Bus, so the overview draws the whole
         // output including the strip the bar sits on.
         reserved: [0, 0, 0, 0],
         transform: 0,
         activeWorkspace: root.activeWorkspace,
-        logical: { x: s.x, y: s.y, width: s.width, height: s.height, scale: s.devicePixelRatio }
+        logical: { x: s.x, y: s.y, width: s.width, height: s.height, scale: 1 }
     }))
     // QML's JS engine has neither Object.fromEntries nor object spread.
     readonly property var windowByAddress: {
@@ -54,17 +59,14 @@ Scope {
     readonly property var focusedMonitor: root.monitors.find(m => m.name === root.activeOutput)
         ?? root.monitors[0] ?? null
 
-    // WindowsRunner.Run() takes "<action>_<uuid>"; the numbers are the
-    // WindowsRunnerAction enum in kwin's krunner-integration plugin.
-    readonly property int actionActivate: 0
-    readonly property int actionClose: 1
-    readonly property int actionMinimize: 2
-    readonly property int actionKeepAbove: 6
-
-    function runnerAction(action, id) {
+    // Everything that acts on a single window goes through the bridge.
+    // org.kde.KWin.WindowsRunner would look like the obvious route, but it
+    // belongs to the krunner-integration plugin, which a plain KineticWE
+    // session does not load — calls to it fail with "No such interface".
+    function windowAction(id, action, value) {
         actionProc.command = ["busctl", "--user", "call",
-            "org.kde.KWin", "/WindowsRunner", "org.kde.KWin.WindowsRunner",
-            "Run", "ss", `${action}_${id}`, ""];
+            "org.mmsimpulse.KWin", "/Windows", "org.mmsimpulse.KWin",
+            "WindowAction", "sss", String(id), action, String(value ?? "")];
         actionProc.running = true;
     }
 
@@ -74,10 +76,10 @@ Scope {
         actionProc.running = true;
     }
 
-    function focusWindow(id) { root.runnerAction(root.actionActivate, id) }
-    function closeWindow(id) { root.runnerAction(root.actionClose, id) }
-    function minimizeWindow(id) { root.runnerAction(root.actionMinimize, id) }
-    function pinWindow(id) { root.runnerAction(root.actionKeepAbove, id) }
+    function focusWindow(id) { root.windowAction(id, "activate") }
+    function closeWindow(id) { root.windowAction(id, "close") }
+    function minimizeWindow(id) { root.windowAction(id, "minimize") }
+    function pinWindow(id) { root.windowAction(id, "keepAbove") }
 
     function switchWorkspace(id) {
         // org.kde.KWin.setCurrentDesktop takes the 1-based index, which is the
@@ -91,14 +93,7 @@ Scope {
         root.kwinCall(direction === "next" ? "nextDesktop" : "previousDesktop");
     }
 
-    function moveWindowToWorkspace(id, wsId) {
-        // No D-Bus method exists for this, so the bridge runs a one-shot KWin
-        // script instead.
-        actionProc.command = ["busctl", "--user", "call",
-            "org.mmsimpulse.KWin", "/Windows", "org.mmsimpulse.KWin",
-            "MoveToDesktop", "si", String(id), String(wsId)];
-        actionProc.running = true;
-    }
+    function moveWindowToWorkspace(id, wsId) { root.windowAction(id, "move", wsId) }
 
     function monitorFor(screen) {
         if (!screen) return null;
@@ -106,9 +101,11 @@ Scope {
     }
 
     function activeWorkspaceForMonitor(monitorName) {
-        // KWin virtual desktops are global unless perOutputVirtualDesktops is
-        // on, so every monitor shows the same active desktop.
-        return root.activeWorkspace;
+        // Virtual desktops are global unless kwinrc [Windows]
+        // PerOutputVirtualDesktops is on, in which case each output reports its
+        // own and the KWin script is the only thing that can see it.
+        const output = root.outputs.find(o => o.name === monitorName);
+        return root.workspaceById[output?.current] ?? root.activeWorkspace;
     }
 
     function biggestWindowForWorkspace(wsId) {
@@ -152,6 +149,7 @@ Scope {
                     root.workspaceById = byId;
                     root.activeWorkspace = byId[s.current] ?? null;
                     root.activeOutput = s.activeOutput ?? "";
+                    root.outputs = s.outputs ?? [];
                 } catch (e) {
                     console.log("[KwinBackend] parse error: " + e);
                 }

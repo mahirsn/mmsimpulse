@@ -14,8 +14,10 @@ Virtual desktops come straight off org.kde.KWin, which does expose them.
 Nothing here knows about tiling. mmsimpulse runs with [Tiling] Enabled=false.
 """
 
+import ctypes
 import json
 import os
+import signal
 import sys
 import tempfile
 
@@ -103,30 +105,60 @@ def build_snapshot(payload, desktops, current_id):
             "xwayland": False,
         })
 
+    # With PerOutputVirtualDesktops on, each output has its own current
+    # desktop; without it they all report the global one.
+    outputs = [
+        {"name": o.get("name", ""),
+         "current": by_uuid.get(o.get("currentDesktop", ""), current)}
+        for o in payload.get("outputs", [])
+    ]
+
     return {
         "windows": windows,
         "workspaces": workspaces,
         "current": current,
+        "outputs": outputs,
         "activeOutput": payload.get("activeOutput", ""),
     }
 
 
-def move_script(window_uuid, position):
-    """One-shot KWin script source moving a window to a 1-based desktop.
+# Focus and close have no D-Bus route: org.kde.KWin.WindowsRunner belongs to
+# the krunner-integration plugin, which is not loaded in a plain KineticWE
+# session, so calls to it fail with "No such interface". The KWin scripting API
+# does expose both — activeWindow is writable and closeWindow is a public slot —
+# and a loaded script cannot be called into, so each action runs as a throwaway
+# script. Same trick kdotool uses.
+ACTIONS = {
+    "activate": "workspace.activeWindow = w;",
+    "close": "w.closeWindow();",
+    "minimize": "w.minimized = true;",
+    "unminimize": "w.minimized = false;",
+    "keepAbove": "w.keepAbove = !w.keepAbove;",
+    "fullscreen": "w.fullScreen = !w.fullScreen;",
+}
 
-    A loaded script cannot be called into, so per-command work is done by
-    loading a throwaway script — the same trick kdotool uses.
-    """
-    wanted = normalize_uuid(window_uuid).strip("{}")
+
+def window_script(window_uuid, action, value=""):
+    """One-shot KWin script source performing `action` on one window."""
+    if action == "move":
+        body = (
+            "const d = workspace.desktops"
+            ".find(d => d.x11DesktopNumber === %d);\n"
+            "    if (d) w.desktops = [d];" % int(value)
+        )
+    elif action in ACTIONS:
+        body = ACTIONS[action]
+    else:
+        raise ValueError(f"unknown window action: {action}")
+
+    target = normalize_uuid(window_uuid).strip("{}")
     return (
         "const target = %s;\n"
-        "const want = %s;\n"
-        "const d = workspace.desktops.find(d => d.x11DesktopNumber === want);\n"
-        "if (d) {\n"
-        "    const w = workspace.windowList()"
+        "const w = workspace.windowList()"
         ".find(w => String(w.internalId).replace(/[{}]/g, '') === target);\n"
-        "    if (w) w.desktops = [d];\n"
-        "}\n" % (json.dumps(wanted), int(position))
+        "if (w) {\n"
+        "    %s\n"
+        "}\n" % (json.dumps(target), body)
     )
 
 
@@ -136,7 +168,15 @@ def move_script(window_uuid, position):
 
 class Bridge(dbus.service.Object):
     def __init__(self, bus):
-        super().__init__(dbus.service.BusName(BUS_NAME, bus), OBJ_PATH)
+        # Take the name outright rather than queueing behind an older copy.
+        # A queued owner still runs and still looks healthy, but the KWin
+        # script's pushes go to whoever holds the name, so it sits there
+        # publishing nothing but virtual desktops — which is exactly what an
+        # orphaned bridge from a previous shell caused.
+        name = dbus.service.BusName(
+            BUS_NAME, bus,
+            allow_replacement=True, replace_existing=True, do_not_queue=True)
+        super().__init__(name, OBJ_PATH)
         self.bus = bus
         self.payload = {"windows": [], "activeOutput": ""}
         self.pending = None
@@ -162,9 +202,12 @@ class Bridge(dbus.service.Object):
         self.schedule()
 
     # -- inbound from the shell -------------------------------------------
-    @dbus.service.method(BUS_NAME, in_signature="si", out_signature="")
-    def MoveToDesktop(self, window_uuid, position):
-        self.run_once(move_script(window_uuid, position))
+    @dbus.service.method(BUS_NAME, in_signature="sss", out_signature="")
+    def WindowAction(self, window_uuid, action, value):
+        try:
+            self.run_once(window_script(window_uuid, action, value))
+        except ValueError as exc:
+            print(f"[bridge] {exc}", file=sys.stderr, flush=True)
 
     # -- outbound ----------------------------------------------------------
     def schedule(self, *_args):
@@ -245,11 +288,31 @@ class Bridge(dbus.service.Object):
                              and GLib.SOURCE_REMOVE)  # noqa: E501
 
 
+def die_with_parent():
+    """Quickshell reaps this process on a clean exit, but not when it is killed.
+
+    Without this an orphaned bridge keeps the bus name and every later one is
+    deaf, which looks like the window list simply not working.
+    """
+    PR_SET_PDEATHSIG = 1
+    try:
+        ctypes.CDLL("libc.so.6", use_errno=True).prctl(PR_SET_PDEATHSIG, signal.SIGTERM)
+    except OSError as exc:
+        print(f"[bridge] no PDEATHSIG: {exc}", file=sys.stderr, flush=True)
+
+
 def main():
+    die_with_parent()
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
-    Bridge(dbus.SessionBus())
+    try:
+        Bridge(dbus.SessionBus())
+    except dbus.exceptions.NameExistsException:
+        print("[bridge] another bridge refuses to yield the bus name",
+              file=sys.stderr, flush=True)
+        return 1
     GLib.MainLoop().run()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

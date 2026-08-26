@@ -38,8 +38,29 @@ function push() {
     const windows = workspace.windowList()
         .filter(w => w.normalWindow && !w.skipTaskbar)
         .map(describe);
+    // With PerOutputVirtualDesktops each output has its own current desktop,
+    // and org.kde.KWin's `current` property only reports the global one.
+    //
+    // Guarded because this is the one part of the snapshot that depends on how
+    // the engine converts KWin's QList of outputs. If it throws, the window
+    // list has to survive: losing per-output desktops is a detail, losing
+    // every window is the whole widget.
+    let outputs = [];
+    try {
+        const screens = workspace.screens;
+        for (let i = 0; i < screens.length; i++) {
+            const desktop = workspace.currentDesktopForScreen(screens[i]);
+            outputs.push({
+                name: screens[i].name,
+                currentDesktop: desktop ? String(desktop.id) : ""
+            });
+        }
+    } catch (e) {
+        outputs = [];
+    }
     callDBus(SERVICE, PATH, IFACE, "Update", JSON.stringify({
         windows: windows,
+        outputs: outputs,
         activeOutput: workspace.activeScreen ? workspace.activeScreen.name : ""
     }));
 }
