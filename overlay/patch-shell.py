@@ -138,6 +138,22 @@ SPECIFIC = [
      "widgetMonitor: HyprlandData.monitors.find(m => m.id == root.monitor.id)",
      "widgetMonitor: HyprlandData.monitors.find(m => m.id == root.monitor.id) ?? root.monitor"),
 
+    # --- taskbar ------------------------------------------------------------
+    # Same ToplevelManager gap as the overview: the dock's list of running apps
+    # comes out empty on KWin. The dock only needs appId, activated and
+    # activate() from each entry, so hand it stand-ins built from the window
+    # list.
+    ("services/TaskbarApps.qml",
+     "        for (const toplevel of ToplevelManager.toplevels.values) {",
+     """        const liveToplevels = WM.compositor === "hyprland"
+            ? ToplevelManager.toplevels.values
+            : WM.windowList.map(w => ({
+                appId: w.class ?? "",
+                activated: w.focused ?? false,
+                activate: () => WM.focusWindow(w.address)
+            }));
+        for (const toplevel of liveToplevels) {"""),
+
     # --- launcher actions ---------------------------------------------------
     ("services/LauncherSearch.qml",
      'Hyprland.dispatch("global quickshell:wallpaperSelectorToggle")',

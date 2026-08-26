@@ -25,6 +25,12 @@ SHORTCUTSRC="${XDG_CONFIG_HOME:-$HOME/.config}/kglobalshortcutsrc"
 
 if [[ "${1:-}" == "--uninstall" ]]; then
     rm -fv "$APPDIR"/$CONFIG-*.desktop
+    while IFS= read -r line; do
+        [[ -z "$line" || "$line" == \#* ]] && continue
+        name=$(cut -f1 <<< "$line")
+        kwriteconfig6 --file kglobalshortcutsrc --group services \
+            --group "$CONFIG-$name.desktop" --key _launch --delete 2>/dev/null || true
+    done < "$TSV"
     kbuildsycoca6 --noincremental >/dev/null 2>&1 || true
     echo "Removed. Rebind or restart the session for kglobalacceld to drop them."
     exit 0
@@ -33,31 +39,54 @@ fi
 mkdir -p "$APPDIR"
 conflicts=()
 
-while IFS=$'\t' read -r name keys desc; do
-    [[ -z "${name:-}" || "$name" == \#* ]] && continue
+# Read whole lines and cut the columns: `IFS=$'\t' read` folds consecutive
+# tabs, which silently shifts the description into the key column on any row
+# that has no suggested key.
+while IFS= read -r line; do
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    name=$(cut -f1 <<< "$line")
+    keys=$(cut -f2 <<< "$line")
+    desc=$(cut -f3 <<< "$line")
 
-    # Warn rather than steal: a key already claimed in kglobalshortcutsrc would
-    # end up bound twice and only one owner would win, silently.
+    # Only worth mentioning as a heads-up now: the key is offered as the KCM's
+    # default, not bound, so nothing is actually stolen.
     if [[ -n "$keys" && -f "$SHORTCUTSRC" ]] && grep -qF "=$keys," "$SHORTCUTSRC"; then
         conflicts+=("$keys ($name)")
     fi
 
+    # X-KDE-Shortcuts is what makes kglobalacceld notice the entry at all, so
+    # it has to carry a key. The binding written below is what decides whether
+    # that key is actually live, and it is not.
     cat > "$APPDIR/$CONFIG-$name.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
 Name=mmsimpulse: $desc
-Exec=qs -c $CONFIG ipc call $name trigger
+Exec=env -u QT_QPA_PLATFORM qs -c $CONFIG ipc call $name trigger
 NoDisplay=true
 Terminal=false
 X-KDE-GlobalAccel-CommandShortcut=true
 X-KDE-Shortcuts=$keys
 DESKTOP
+
+    # Register the action unbound: the third field is the friendly name, the
+    # second the default the Shortcuts KCM offers, the first the live key.
+    # Anything already in the file is a binding the user chose, so leave it.
+    entry="$CONFIG-$name.desktop"
+    if [[ -z "$(kreadconfig6 --file kglobalshortcutsrc --group services --group "$entry" --key _launch 2>/dev/null)" ]]; then
+        kwriteconfig6 --file kglobalshortcutsrc --group services --group "$entry" \
+            --key _k_friendly_name "mmsimpulse: $desc"
+        kwriteconfig6 --file kglobalshortcutsrc --group services --group "$entry" \
+            --key _launch "none,${keys:-none},mmsimpulse: $desc"
+    fi
 done < "$TSV"
 
 kbuildsycoca6 --noincremental >/dev/null 2>&1 || true
 echo "Installed $(ls "$APPDIR"/$CONFIG-*.desktop | wc -l) shortcut entries in $APPDIR"
 
+echo "Nothing is bound by default. Assign keys in System Settings > Shortcuts,"
+echo "search for \"mmsimpulse\"."
+
 if (( ${#conflicts[@]} )); then
-    printf '\nAlready bound elsewhere, rebind these in System Settings > Shortcuts:\n'
+    printf '\nThese suggested defaults are already taken elsewhere, so pick something\nelse for them:\n'
     printf '  %s\n' "${conflicts[@]}"
 fi

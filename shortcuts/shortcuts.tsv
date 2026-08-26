@@ -19,7 +19,7 @@ oskToggle	Meta+K	Toggle on-screen keyboard
 lock	Meta+Ctrl+L	Lock screen
 wallpaperSelectorToggle	Meta+Comma	Toggle wallpaper selector
 wallpaperSelectorRandom	Meta+Shift+Comma	Random wallpaper
-centeredWallpaperToggle		Toggle centered wallpaper
+centeredWallpaperToggle	Meta+Shift+B	Toggle centered wallpaper
 regionScreenshot	Meta+Shift+S	Screenshot region
 regionRecord	Meta+Alt+R	Record region
 regionRecordWithSound	Meta+Alt+Shift+R	Record region with sound
@@ -28,4 +28,4 @@ regionSearch	Meta+Shift+F	Search region
 screenTranslate	Meta+Shift+G	Translate screen
 overviewClipboardToggle	Meta+Shift+V	Clipboard history
 overviewEmojiToggle	Meta+Period	Emoji picker
-overviewSymbolsToggle		Material symbols picker
+overviewSymbolsToggle	Meta+Shift+M	Material symbols picker

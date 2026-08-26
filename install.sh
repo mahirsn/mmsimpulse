@@ -24,12 +24,21 @@ command -v kinetic-we >/dev/null || { echo "kinetic-we not found; install the ki
 # The upstream skin is copied wholesale and the KWin-specific files are laid
 # over it, so upstream stays a clean base you can re-copy after it updates.
 echo "==> shell config -> $SHELL_DIR"
-mkdir -p "$SHELL_DIR"
-rsync -a --delete --exclude '.git' "$SHELL_SRC/" "$SHELL_DIR/"
-cp -v "$REPO"/overlay/services/*.qml "$SHELL_DIR/services/"
-mkdir -p "$SHELL_DIR/scripts/kwin"
-cp -v "$REPO"/kwin-script/*.js "$SHELL_DIR/scripts/kwin/"
-python3 "$REPO/overlay/patch-shell.py" "$SHELL_DIR"
+# Assembled in a staging directory and swapped into place. A running shell
+# watches this tree and hot-reloads on any change, so copying into it directly
+# makes it reload a half-written config and fail to load.
+STAGE="$SHELL_DIR.new"
+rm -rf "$STAGE"
+mkdir -p "$STAGE"
+rsync -a --exclude '.git' "$SHELL_SRC/" "$STAGE/"
+cp "$REPO"/overlay/services/*.qml "$STAGE/services/"
+mkdir -p "$STAGE/scripts/kwin"
+cp "$REPO"/kwin-script/*.js "$STAGE/scripts/kwin/"
+python3 "$REPO/overlay/patch-shell.py" "$STAGE"
+rm -rf "$SHELL_DIR.old"
+[[ -d "$SHELL_DIR" ]] && mv "$SHELL_DIR" "$SHELL_DIR.old"
+mv "$STAGE" "$SHELL_DIR"
+rm -rf "$SHELL_DIR.old"
 
 # The skin defaults to ~/.config/illogical-impulse, which the Hyprland session
 # also writes to; patch-shell.py points this copy at ~/.config/mmsimpulse, so
@@ -40,7 +49,7 @@ if [[ ! -d "$SHELL_CONFIG" && -d "$HOME/.config/illogical-impulse" ]]; then
 fi
 mkdir -p "$SHELL_CONFIG"
 
-[[ "${1:-}" == "--shell" ]] && { echo "Done. Reload with: pkill -f "qs -c $CONFIG"; qs -c $CONFIG"; exit 0; }
+[[ "${1:-}" == "--shell" ]] && { echo "Done. Reload with: pkill -f 'qs -c $CONFIG'; qs -c $CONFIG"; exit 0; }
 
 # --- bridge ----------------------------------------------------------------
 echo "==> bridge -> $BIN"
@@ -63,6 +72,22 @@ edits = [
      '        qs -c mmsimpulse >"$HOME/.local/share/mmsimpulse.log" 2>&1'),
     ('        echo "noctalia exited (code $?), restarting in 2s..."',
      '        echo "mmsimpulse exited (code $?), restarting in 2s..."'),
+    # The Hyprland session exports QT_QPA_PLATFORM="wayland;xcb" and the user
+    # systemd manager outlives a logout, so the value leaks into this session.
+    # Quickshell's IPC client does not recognise the multi-value form, decides
+    # the caller is on X11, and then refuses to talk to a shell it recorded as
+    # Wayland — which silently breaks every shortcut kglobalaccel launches.
+    ('dbus-update-activation-environment --systemd --all 2>/dev/null || true',
+     'unset QT_QPA_PLATFORM\n'
+     'systemctl --user unset-environment QT_QPA_PLATFORM 2>/dev/null || true\n'
+     'dbus-update-activation-environment --systemd --all 2>/dev/null || true'),
+    # start-kineticwe restarts the portals but leaves other compositors'
+    # backends running. A leftover xdg-desktop-portal-hyprland keeps owning
+    # its impl name with no Hyprland behind it, which is a trap for anything
+    # that negotiates ScreenCast.
+    ('killall -q xdg-desktop-portal-kde xdg-desktop-portal xdg-desktop-portal-gtk xdg-document-portal 2>/dev/null || true',
+     'killall -q xdg-desktop-portal-kde xdg-desktop-portal xdg-desktop-portal-gtk xdg-document-portal '
+     'xdg-desktop-portal-hyprland xdg-desktop-portal-wlr 2>/dev/null || true'),
     ('pkill -x noctalia 2>/dev/null || true',
      'pkill -f "qs -c mmsimpulse" 2>/dev/null || true'),
     # the bridge lives in ~/.local/bin, which a display-manager session does
