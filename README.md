@@ -201,3 +201,7 @@ rule stops matching — that is the signal to re-read the upstream file.
   editing, monitor layout, hyprsunset. The KDE equivalents are in System
   Settings, and night light is `org.kde.KWin.NightLight`.
 - **`overview.style: "niri"` is not ported**; leave it at the default.
+- **The overview grid follows the real virtual desktops**, not Config's
+  rows x columns. Hyprland numbers workspaces 1..N whether they exist or not;
+  KWin does not, so a fixed 5x2 would be mostly empty cells. Set
+  `overview.enable: false` to drop the grid from the launcher entirely.

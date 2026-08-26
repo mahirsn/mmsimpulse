@@ -138,6 +138,27 @@ SPECIFIC = [
      "widgetMonitor: HyprlandData.monitors.find(m => m.id == root.monitor.id)",
      "widgetMonitor: HyprlandData.monitors.find(m => m.id == root.monitor.id) ?? root.monitor"),
 
+    # --- overview grid size -------------------------------------------------
+    # The grid is fixed at Config's rows x columns because Hyprland numbers
+    # workspaces 1..N whether or not they exist. KWin has a real, usually
+    # small, list of virtual desktops, so the default 5x2 draws ten cells for
+    # one desktop and the launcher is mostly empty boxes. Follow the desktops
+    # that actually exist instead. These three rules run in order: the two
+    # renames first, then the definitions that still read Config.
+    ("modules/ii/overview/OverviewWidget.qml",
+     "Config.options.overview.rows", "root.overviewRows"),
+    ("modules/ii/overview/OverviewWidget.qml",
+     "Config.options.overview.columns", "root.overviewColumns"),
+    ("modules/ii/overview/OverviewWidget.qml",
+     "    readonly property int workspacesShown: root.overviewRows * root.overviewColumns",
+     """    readonly property int overviewColumns: WM.compositor === "hyprland"
+        ? Config.options.overview.columns
+        : Math.max(1, Math.min(Config.options.overview.columns, WM.workspaces.length))
+    readonly property int overviewRows: WM.compositor === "hyprland"
+        ? Config.options.overview.rows
+        : Math.max(1, Math.ceil(WM.workspaces.length / root.overviewColumns))
+    readonly property int workspacesShown: root.overviewRows * root.overviewColumns"""),
+
     # --- taskbar ------------------------------------------------------------
     # Same ToplevelManager gap as the overview: the dock's list of running apps
     # comes out empty on KWin. The dock only needs appId, activated and
