@@ -138,6 +138,30 @@ ACTIONS = {
 }
 
 
+def desktop_script(output_name, position):
+    """Switch one output to a 1-based desktop.
+
+    org.kde.KWin.setCurrentDesktop is global. KWin's own setCurrent takes an
+    output and, with [Windows] PerOutputVirtualDesktops on, moves only that
+    one — and with it off still moves them all — so the per-output call is
+    correct either way and no mode detection is needed.
+    """
+    return (
+        "const want = %d;\n"
+        "const outName = %s;\n"
+        "const d = workspace.desktops.find(d => d.x11DesktopNumber === want);\n"
+        "if (d) {\n"
+        "    let target = null;\n"
+        "    const screens = workspace.screens;\n"
+        "    for (let i = 0; i < screens.length; i++) {\n"
+        "        if (screens[i].name === outName) { target = screens[i]; break; }\n"
+        "    }\n"
+        "    if (target) workspace.setCurrentDesktopForScreen(d, target);\n"
+        "    else workspace.currentDesktop = d;\n"
+        "}\n" % (int(position), json.dumps(output_name))
+    )
+
+
 def window_script(window_uuid, action, value=""):
     """One-shot KWin script source performing `action` on one window."""
     if action == "move":
@@ -202,6 +226,10 @@ class Bridge(dbus.service.Object):
         self.schedule()
 
     # -- inbound from the shell -------------------------------------------
+    @dbus.service.method(BUS_NAME, in_signature="si", out_signature="")
+    def SetDesktopForOutput(self, output_name, position):
+        self.run_once(desktop_script(output_name, position))
+
     @dbus.service.method(BUS_NAME, in_signature="sss", out_signature="")
     def WindowAction(self, window_uuid, action, value):
         try:

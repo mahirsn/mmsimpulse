@@ -81,16 +81,31 @@ Scope {
     function minimizeWindow(id) { root.windowAction(id, "minimize") }
     function pinWindow(id) { root.windowAction(id, "keepAbove") }
 
-    function switchWorkspace(id) {
-        // org.kde.KWin.setCurrentDesktop takes the 1-based index, which is the
-        // same numbering the shell uses, so no uuid lookup is needed here.
+    // Always switch through the output rather than org.kde.KWin's global
+    // setCurrentDesktop. With kwinrc [Windows] PerOutputVirtualDesktops on this
+    // moves only the focused monitor, the way Hyprland behaves; with it off
+    // KWin still moves every output, so one code path covers both.
+    function switchWorkspaceOn(monitorName, id) {
         actionProc.command = ["busctl", "--user", "call",
-            "org.kde.KWin", "/KWin", "org.kde.KWin", "setCurrentDesktop", "i", String(id)];
+            "org.mmsimpulse.KWin", "/Windows", "org.mmsimpulse.KWin",
+            "SetDesktopForOutput", "si", String(monitorName ?? ""), String(id)];
         actionProc.running = true;
     }
 
+    function switchWorkspace(id) {
+        root.switchWorkspaceOn(root.focusedMonitor?.name, id);
+    }
+
     function switchWorkspaceRelative(direction) {
-        root.kwinCall(direction === "next" ? "nextDesktop" : "previousDesktop");
+        const name = root.focusedMonitor?.name;
+        const from = root.activeWorkspaceForMonitor(name)?.id ?? root.activeWorkspace?.id ?? 1;
+        const count = root.workspaces.length;
+        if (count === 0) return;
+        // Wrap, matching KWin's own next/previousDesktop.
+        const next = direction === "next"
+            ? (from % count) + 1
+            : ((from - 2 + count) % count) + 1;
+        root.switchWorkspaceOn(name, next);
     }
 
     function moveWindowToWorkspace(id, wsId) { root.windowAction(id, "move", wsId) }

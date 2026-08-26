@@ -288,10 +288,19 @@ GUARD = [
 # WorkspaceModel's non-Hyprland path was written for niri, where every
 # workspace names an output. KWin's are global and report none.
 WORKSPACE_MODEL = [
-    ("w.output === root.monitorName && w.is_active",
-     '(w.output === "" || w.output === root.monitorName) && w.is_active'),
+    # niri names an output on every workspace; KWin's are global and name none.
+    # Which desktop a given monitor is on is the backend's question, because
+    # with PerOutputVirtualDesktops each output has its own.
+    ("""        const ws = WM.workspaces.find(w => w.output === root.monitorName && w.is_active)
+        return ws?.idx ?? 1""",
+     """        return WM.activeWorkspaceForMonitor(root.monitorName)?.id ?? 1"""),
     ("w.output === root.monitorName && w.idx === number",
      '(w.output === "" || w.output === root.monitorName) && w.idx === number'),
+    # A workspace counts as occupied on this monitor only if it holds a window
+    # on this monitor — otherwise every indicator lights up for every screen.
+    ("                return WM.windowList.some(w => w.workspaceId === realId)",
+     """                return WM.windowList.some(w => w.workspaceId === realId
+                    && (!w.output || w.output === root.monitorName))"""),
 ]
 
 IMPORT = "import qs.services"
