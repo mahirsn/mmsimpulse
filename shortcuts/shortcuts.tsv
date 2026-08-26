@@ -5,12 +5,12 @@
 # (searchToggleRelease, workspaceNumber, the *Open/*Close variants, osdVolume*)
 # have no KDE equivalent and are left unbound.  Leave the key column empty to
 # install an action without a default binding.
-searchToggle	Meta+Space	Toggle search
-overviewWorkspacesToggle	Meta+G	Toggle overview
+searchToggle	Meta+Return	Toggle search
+overviewWorkspacesToggle	Meta+E	Toggle overview
 overlayToggle	Meta+Slash	Toggle overlay
-sidebarLeftToggle	Meta+A	Toggle left sidebar
+sidebarLeftToggle	Meta+J	Toggle left sidebar
 sidebarRightToggle	Meta+N	Toggle right sidebar
-sidebarLeftToggleDetach	Meta+Shift+A	Detach left sidebar
+sidebarLeftToggleDetach	Meta+Shift+J	Detach left sidebar
 barToggle	Meta+B	Toggle bar
 sessionToggle	Meta+X	Toggle session screen
 settingsToggle	Meta+I	Toggle settings
