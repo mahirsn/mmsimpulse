@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import qs.modules.common
 import qs.modules.common.widgets
-import qs.plugins.discordVoice
+import "."
 
 // Bar widget: current voice state at a glance, controls on the widget itself.
 // The popup is hover-driven, so it stays read-only and the actions live on the

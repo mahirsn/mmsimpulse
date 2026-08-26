@@ -76,8 +76,12 @@ import pathlib, sys
 
 src = pathlib.Path("/usr/bin/start-kineticwe").read_text()
 edits = [
+    # `|| true` matters: start-kineticwe runs under `set -e`, which the
+    # supervisor subshell inherits, so the first non-zero exit from the shell
+    # kills the loop that is supposed to restart it. Upstream has the same bug
+    # with Noctalia — the shell comes back once and never again.
     ('        noctalia >"$HOME/.local/share/noctalia.log" 2>&1',
-     '        qs -c mmsimpulse >"$HOME/.local/share/mmsimpulse.log" 2>&1'),
+     '        qs -c mmsimpulse >"$HOME/.local/share/mmsimpulse.log" 2>&1 || true'),
     ('        echo "noctalia exited (code $?), restarting in 2s..."',
      '        echo "mmsimpulse exited (code $?), restarting in 2s..."'),
     # The Hyprland session exports QT_QPA_PLATFORM="wayland;xcb" and the user

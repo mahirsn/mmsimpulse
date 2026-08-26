@@ -2,7 +2,8 @@ import QtQuick
 import QtQuick.Layouts
 import qs.modules.common
 import qs.modules.common.widgets
-import qs.plugins.discordVoice
+import qs.services
+import "."
 
 // Read-only status for the bar widget's hover popup. Deliberately has no
 // controls: StyledPopup closes as soon as the pointer leaves the widget, so

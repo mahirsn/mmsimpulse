@@ -215,6 +215,26 @@ SPECIFIC = [
         : Math.max(1, Math.ceil(WM.workspaces.length / root.overviewColumns))
     readonly property int workspacesShown: root.overviewRows * root.overviewColumns"""),
 
+    # --- plugin widgets in the Settings picker -------------------------------
+    # The bar editor offers a fixed list, so a plugin widget could be resolved
+    # and rendered but never placed from the UI. Derive the extra entries from
+    # bar.pluginWidgets so any plugin shows up without another patch.
+    ("modules/ii/settings/pages/BarConfig.qml",
+     "    property var allWidgets: [",
+     "    readonly property var baseWidgets: ["),
+    ("modules/ii/settings/pages/BarConfig.qml",
+     """        { id: "launcherButton",     name: Translation.tr("Launcher Button"),     icon: "search" },
+    ]""",
+     """        { id: "launcherButton",     name: Translation.tr("Launcher Button"),     icon: "search" },
+    ]
+
+    property var allWidgets: page.baseWidgets.concat(
+        (Config.options.bar.pluginWidgets ?? []).map(id => ({
+            id: id,
+            name: id.charAt(0).toUpperCase() + id.slice(1),
+            icon: "extension"
+        })))"""),
+
     # --- taskbar ------------------------------------------------------------
     # Same ToplevelManager gap as the overview: the dock's list of running apps
     # comes out empty on KWin. The dock only needs appId, activated and
