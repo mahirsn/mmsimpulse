@@ -33,6 +33,24 @@ EXCLUDE = {
     "modules/common/models/WorkspaceModel.qml",
 }
 
+# Applied to every .qml, .sh and .py outside EXCLUDE.
+#
+# Directories.qml points the shell at ~/.config/mmsimpulse so this session and
+# the Hyprland one stop overwriting each other's settings, but a dozen scripts
+# and a couple of QML sites spell the old directory out by hand. Left alone
+# they keep reading and writing the Hyprland session's config: presets save
+# where nothing looks for them, and the colour scripts generate themes from
+# stale settings.
+#
+# Deliberately narrow: it matches the path only. `illogical-impulse` is also
+# the keyring attribute the stored API keys live under, and renaming that
+# would lose them.
+CONFIG_DIR = [
+    (".config/illogical-impulse", ".config/mmsimpulse"),
+    ("/illogical-impulse/config.json", "/mmsimpulse/config.json"),
+    ('XDG_CONFIG_HOME/illogical-impulse"', 'XDG_CONFIG_HOME/mmsimpulse"'),
+]
+
 # (old, new) applied to every .qml outside EXCLUDE. Order matters: the longer
 # ".values" forms have to run before the bare ones.
 GLOBAL = [
@@ -319,7 +337,9 @@ def ensure_import(text):
 
 def main():
     root = pathlib.Path(sys.argv[1])
-    files = {p.relative_to(root).as_posix(): p for p in root.rglob("*.qml")}
+    files = {p.relative_to(root).as_posix(): p
+             for pattern in ("*.qml", "*.sh", "*.py")
+             for p in root.rglob(pattern)}
     changed = set()
     misses = []
 
@@ -336,10 +356,12 @@ def main():
         path.write_text(text.replace(old, new))
         changed.add(rel)
 
-    for old, new in GLOBAL:
+    for old, new in CONFIG_DIR + GLOBAL:
         hits = 0
         for rel, path in files.items():
             if rel in EXCLUDE:
+                continue
+            if not rel.endswith(".qml") and (old, new) in GLOBAL:
                 continue
             text = path.read_text()
             if old in text:
