@@ -1,0 +1,207 @@
+#!/usr/bin/env python3
+"""mmsimpulse bridge between KineticWE (KWin) and the Quickshell shell.
+
+Why this exists: Quickshell has no D-Bus API in QML and owns no bus name, and
+KWin publishes no window list on D-Bus. The only way to see windows is a KWin
+script, whose only way out is callDBus(). So something has to own a bus name,
+receive those pushes, and hand the result to the shell in a form Quickshell can
+read. That is this process. It prints one JSON snapshot per line on stdout,
+which KwinBackend.qml consumes exactly the way NiriBackend.qml consumes
+`niri msg event-stream`.
+
+Virtual desktops come straight off org.kde.KWin, which does expose them.
+
+Nothing here knows about tiling. mmsimpulse runs with [Tiling] Enabled=false.
+"""
+
+import json
+import os
+import sys
+import tempfile
+
+import dbus
+import dbus.mainloop.glib
+import dbus.service
+from gi.repository import GLib
+
+BUS_NAME = "org.mmsimpulse.KWin"
+OBJ_PATH = "/Windows"
+KWIN = "org.kde.KWin"
+VDM_IFACE = "org.kde.KWin.VirtualDesktopManager"
+SCRIPT = os.environ.get(
+    "MMSIMPULSE_KWIN_SCRIPT",
+    os.path.expanduser("~/.config/quickshell/mmsimpulse/scripts/kwin/mmsimpulse-windows.js"),
+)
+DEBOUNCE_MS = 60
+
+
+# ---------------------------------------------------------------------------
+# Pure helpers (covered by test_bridge.py)
+# ---------------------------------------------------------------------------
+
+def normalize_uuid(value):
+    """KWin spells the same id both as {uuid} and uuid depending on the API.
+
+    WindowsRunner.Run() wants the braced form that QUuid::toString() produces,
+    while the script's QUuid->JS conversion is not guaranteed to keep braces.
+    Normalising on both sides is what keeps focus/close pointing at the right
+    window.
+    """
+    return "{" + str(value).strip("{}") + "}"
+
+
+def build_snapshot(payload, desktops, current_id):
+    """Merge the script's window push with virtual-desktop state.
+
+    `desktops` is org.kde.KWin's a(iss) as [(position, id, name)] with a
+    0-based position; the shell wants Hyprland-style 1-based numeric ids, so
+    workspace N is position N-1.
+    """
+    by_uuid = {d[1]: int(d[0]) + 1 for d in desktops}
+    workspaces = [
+        {"id": int(pos) + 1, "uuid": uuid, "name": name or f"Desktop {int(pos) + 1}"}
+        for pos, uuid, name in desktops
+    ]
+    workspaces.sort(key=lambda w: w["id"])
+    current = by_uuid.get(current_id, workspaces[0]["id"] if workspaces else 1)
+
+    windows = []
+    for w in payload.get("windows", []):
+        on = [by_uuid[u] for u in w.get("desktops", []) if u in by_uuid]
+        # An empty desktop list means "on all desktops", so such a window is
+        # always on whichever one is current rather than on none.
+        windows.append({
+            **w,
+            "id": normalize_uuid(w.get("id", "")),
+            "address": normalize_uuid(w.get("id", "")),
+            "class": w.get("appId", ""),
+            "workspaceId": on[0] if on else current,
+            "onAllDesktops": not on,
+        })
+
+    return {
+        "windows": windows,
+        "workspaces": workspaces,
+        "current": current,
+        "activeOutput": payload.get("activeOutput", ""),
+    }
+
+
+def move_script(window_uuid, position):
+    """One-shot KWin script source moving a window to a 1-based desktop.
+
+    A loaded script cannot be called into, so per-command work is done by
+    loading a throwaway script — the same trick kdotool uses.
+    """
+    wanted = normalize_uuid(window_uuid).strip("{}")
+    return (
+        "const target = %s;\n"
+        "const want = %s;\n"
+        "const d = workspace.desktops.find(d => d.x11DesktopNumber === want);\n"
+        "if (d) {\n"
+        "    const w = workspace.windowList()"
+        ".find(w => String(w.internalId).replace(/[{}]/g, '') === target);\n"
+        "    if (w) w.desktops = [d];\n"
+        "}\n" % (json.dumps(wanted), int(position))
+    )
+
+
+# ---------------------------------------------------------------------------
+# D-Bus plumbing
+# ---------------------------------------------------------------------------
+
+class Bridge(dbus.service.Object):
+    def __init__(self, bus):
+        super().__init__(dbus.service.BusName(BUS_NAME, bus), OBJ_PATH)
+        self.bus = bus
+        self.payload = {"windows": [], "activeOutput": ""}
+        self.pending = None
+
+        bus.add_signal_receiver(
+            self.schedule, dbus_interface=VDM_IFACE, bus_name=KWIN)
+        bus.add_signal_receiver(
+            self.on_kwin_owner_changed, signal_name="NameOwnerChanged",
+            dbus_interface="org.freedesktop.DBus", arg0=KWIN)
+
+        self.load_script()
+        self.schedule()
+
+    # -- inbound from the KWin script -------------------------------------
+    @dbus.service.method(BUS_NAME, in_signature="s", out_signature="")
+    def Update(self, raw):
+        try:
+            self.payload = json.loads(raw)
+        except ValueError as exc:
+            print(f"[bridge] bad payload: {exc}", file=sys.stderr, flush=True)
+            return
+        self.schedule()
+
+    # -- inbound from the shell -------------------------------------------
+    @dbus.service.method(BUS_NAME, in_signature="si", out_signature="")
+    def MoveToDesktop(self, window_uuid, position):
+        self.run_once(move_script(window_uuid, position))
+
+    # -- outbound ----------------------------------------------------------
+    def schedule(self, *_args):
+        if self.pending is None:
+            self.pending = GLib.timeout_add(DEBOUNCE_MS, self.emit)
+
+    def emit(self):
+        self.pending = None
+        try:
+            vdm = dbus.Interface(
+                self.bus.get_object(KWIN, "/VirtualDesktopManager"),
+                "org.freedesktop.DBus.Properties")
+            desktops = [(int(d[0]), str(d[1]), str(d[2]))
+                        for d in vdm.Get(VDM_IFACE, "desktops")]
+            current = str(vdm.Get(VDM_IFACE, "current"))
+        except dbus.DBusException as exc:
+            print(f"[bridge] KWin unreachable: {exc}", file=sys.stderr, flush=True)
+            return GLib.SOURCE_REMOVE
+        print(json.dumps(build_snapshot(self.payload, desktops, current)), flush=True)
+        return GLib.SOURCE_REMOVE
+
+    # -- KWin script lifecycle --------------------------------------------
+    def scripting(self):
+        return dbus.Interface(
+            self.bus.get_object(KWIN, "/Scripting"), "org.kde.kwin.Scripting")
+
+    def load_script(self):
+        try:
+            s = self.scripting()
+            s.unloadScript("mmsimpulse-windows")
+            s.loadScript(SCRIPT, "mmsimpulse-windows")
+            s.start()
+        except dbus.DBusException as exc:
+            print(f"[bridge] could not load KWin script: {exc}",
+                  file=sys.stderr, flush=True)
+
+    def run_once(self, source):
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as fh:
+            fh.write(source)
+            path = fh.name
+        try:
+            s = self.scripting()
+            s.loadScript(path, "mmsimpulse-oneshot")
+            s.start()
+            s.unloadScript("mmsimpulse-oneshot")
+        except dbus.DBusException as exc:
+            print(f"[bridge] one-shot failed: {exc}", file=sys.stderr, flush=True)
+        finally:
+            os.unlink(path)
+
+    def on_kwin_owner_changed(self, _name, _old, new):
+        # KWin restarted (kwin_wayland --replace); the script died with it.
+        if new:
+            GLib.timeout_add(500, lambda: (self.load_script(), self.schedule())
+                             and GLib.SOURCE_REMOVE)
+
+
+def main():
+    dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+    Bridge(dbus.SessionBus())
+    GLib.MainLoop().run()
+
+
+if __name__ == "__main__":
+    main()

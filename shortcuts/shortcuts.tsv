@@ -1,0 +1,31 @@
+# mmsimpulse shell shortcuts.  name <TAB> default keys <TAB> description
+#
+# Only actions that work as a single press are here.  kglobalaccel launches a
+# command and has no release event, so the shell's press/release pairs
+# (searchToggleRelease, workspaceNumber, the *Open/*Close variants, osdVolume*)
+# have no KDE equivalent and are left unbound.  Leave the key column empty to
+# install an action without a default binding.
+searchToggle	Meta+Space	Toggle search
+overviewWorkspacesToggle	Meta+G	Toggle overview
+overlayToggle	Meta+Slash	Toggle overlay
+sidebarLeftToggle	Meta+A	Toggle left sidebar
+sidebarRightToggle	Meta+N	Toggle right sidebar
+sidebarLeftToggleDetach	Meta+Shift+A	Detach left sidebar
+barToggle	Meta+B	Toggle bar
+sessionToggle	Meta+X	Toggle session screen
+settingsToggle	Meta+I	Toggle settings
+mediaControlsToggle	Meta+M	Toggle media controls
+oskToggle	Meta+K	Toggle on-screen keyboard
+lock	Meta+Ctrl+L	Lock screen
+wallpaperSelectorToggle	Meta+Comma	Toggle wallpaper selector
+wallpaperSelectorRandom	Meta+Shift+Comma	Random wallpaper
+centeredWallpaperToggle		Toggle centered wallpaper
+regionScreenshot	Meta+Shift+S	Screenshot region
+regionRecord	Meta+Alt+R	Record region
+regionRecordWithSound	Meta+Alt+Shift+R	Record region with sound
+regionOcr	Meta+Shift+T	OCR region
+regionSearch	Meta+Shift+F	Search region
+screenTranslate	Meta+Shift+G	Translate screen
+overviewClipboardToggle	Meta+Shift+V	Clipboard history
+overviewEmojiToggle	Meta+Period	Emoji picker
+overviewSymbolsToggle		Material symbols picker

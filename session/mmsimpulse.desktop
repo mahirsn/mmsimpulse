@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=mmsimpulse
+Comment=KineticWE with the mmsimpulse shell (floating windows, tiling off)
+Exec=@BIN@/start-mmsimpulse
+Type=Application
+DesktopNames=KDE
