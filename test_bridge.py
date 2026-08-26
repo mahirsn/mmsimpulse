@@ -28,10 +28,18 @@ assert [w["id"] for w in snap["workspaces"]] == [1, 2]
 assert snap["workspaces"][1]["name"] == "Desktop 2", "unnamed desktops get a fallback label"
 assert snap["current"] == 1
 assert snap["activeOutput"] == "eDP-1"
+# the skin's non-Hyprland path reads niri's field names
+assert [w["is_active"] for w in snap["workspaces"]] == [True, False]
+assert snap["workspaces"][0]["idx"] == 1 and snap["workspaces"][0]["output"] == ""
 
 wa, wb = snap["windows"]
 assert wa["workspaceId"] == 2
 assert wa["id"] == "{wA}" and wa["address"] == "{wA}" and wa["class"] == "foot"
+assert wa["focused"] is False
+# the overview reads windows in `hyprctl clients -j` shape
+assert wa["at"] == [0, 0] and wa["size"] == [0, 0] and wa["floating"] is True
+assert wa["workspace"] == {"id": 2, "name": "Desktop 2"}
+assert wb["workspace"]["name"] == "One"
 # an empty desktop list means "on all desktops", so it must land on the current one
 assert wb["workspaceId"] == 1 and wb["onAllDesktops"] is True
 assert wa["onAllDesktops"] is False

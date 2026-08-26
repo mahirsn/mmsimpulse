@@ -28,6 +28,7 @@ BUS_NAME = "org.mmsimpulse.KWin"
 OBJ_PATH = "/Windows"
 KWIN = "org.kde.KWin"
 VDM_IFACE = "org.kde.KWin.VirtualDesktopManager"
+SCRIPT_NAME = "mmsimpulse-windows"
 SCRIPT = os.environ.get(
     "MMSIMPULSE_KWIN_SCRIPT",
     os.path.expanduser("~/.config/quickshell/mmsimpulse/scripts/kwin/mmsimpulse-windows.js"),
@@ -59,24 +60,47 @@ def build_snapshot(payload, desktops, current_id):
     """
     by_uuid = {d[1]: int(d[0]) + 1 for d in desktops}
     workspaces = [
-        {"id": int(pos) + 1, "uuid": uuid, "name": name or f"Desktop {int(pos) + 1}"}
+        {
+            "id": int(pos) + 1,
+            # `idx` and `output` mirror niri's shape, which is what the skin's
+            # non-Hyprland code path reads. KWin's desktops are global, so no
+            # workspace names an output.
+            "idx": int(pos) + 1,
+            "output": "",
+            "uuid": uuid,
+            "name": name or f"Desktop {int(pos) + 1}",
+        }
         for pos, uuid, name in desktops
     ]
     workspaces.sort(key=lambda w: w["id"])
     current = by_uuid.get(current_id, workspaces[0]["id"] if workspaces else 1)
+    for ws in workspaces:
+        ws["is_active"] = ws["id"] == current
 
     windows = []
     for w in payload.get("windows", []):
         on = [by_uuid[u] for u in w.get("desktops", []) if u in by_uuid]
         # An empty desktop list means "on all desktops", so such a window is
         # always on whichever one is current rather than on none.
+        ws_id = on[0] if on else current
+        ws_name = next((w2["name"] for w2 in workspaces if w2["id"] == ws_id), "")
         windows.append({
             **w,
             "id": normalize_uuid(w.get("id", "")),
             "address": normalize_uuid(w.get("id", "")),
             "class": w.get("appId", ""),
-            "workspaceId": on[0] if on else current,
+            "focused": w.get("active", False),
+            "workspaceId": ws_id,
             "onAllDesktops": not on,
+            # The overview reads windows in `hyprctl clients -j` shape, so
+            # mirror it. `monitor` is an index and is filled in by
+            # KwinBackend.qml, which is where the monitor list lives.
+            "at": [w.get("x", 0), w.get("y", 0)],
+            "size": [w.get("width", 0), w.get("height", 0)],
+            "workspace": {"id": ws_id, "name": ws_name},
+            # Tiling is off, so every window is floating by definition.
+            "floating": True,
+            "xwayland": False,
         })
 
     return {
@@ -116,6 +140,7 @@ class Bridge(dbus.service.Object):
         self.bus = bus
         self.payload = {"windows": [], "activeOutput": ""}
         self.pending = None
+        self.oneshot = 0
 
         bus.add_signal_receiver(
             self.schedule, dbus_interface=VDM_IFACE, bus_name=KWIN)
@@ -123,7 +148,7 @@ class Bridge(dbus.service.Object):
             self.on_kwin_owner_changed, signal_name="NameOwnerChanged",
             dbus_interface="org.freedesktop.DBus", arg0=KWIN)
 
-        self.load_script()
+        GLib.idle_add(self.load_script)
         self.schedule()
 
     # -- inbound from the KWin script -------------------------------------
@@ -166,15 +191,35 @@ class Bridge(dbus.service.Object):
         return dbus.Interface(
             self.bus.get_object(KWIN, "/Scripting"), "org.kde.kwin.Scripting")
 
-    def load_script(self):
+    def load_script(self, attempt=0):
+        """Replace any previously loaded copy of the script, then run it.
+
+        unloadScript destroys the Script with deleteLater(), so the plugin name
+        stays registered until KWin's event loop turns; a loadScript issued
+        before that returns -1 and silently adds nothing. Hence the retry: one
+        pass unloads, a later one loads.
+        """
         try:
             s = self.scripting()
-            s.unloadScript("mmsimpulse-windows")
-            s.loadScript(SCRIPT, "mmsimpulse-windows")
-            s.start()
+            if s.isScriptLoaded(SCRIPT_NAME):
+                s.unloadScript(SCRIPT_NAME)
+            else:
+                # loadScript is overloaded (s and ss); dbus-python would pick
+                # the single-argument form off introspection and then fail, so
+                # the signature has to be named explicitly.
+                if s.loadScript(SCRIPT, SCRIPT_NAME, signature="ss") >= 0:
+                    s.start()
+                    return GLib.SOURCE_REMOVE
         except dbus.DBusException as exc:
             print(f"[bridge] could not load KWin script: {exc}",
                   file=sys.stderr, flush=True)
+            return GLib.SOURCE_REMOVE
+
+        if attempt < 20:
+            GLib.timeout_add(100, self.load_script, attempt + 1)
+        else:
+            print("[bridge] gave up loading the KWin script", file=sys.stderr, flush=True)
+        return GLib.SOURCE_REMOVE
 
     def run_once(self, source):
         with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as fh:
@@ -182,9 +227,12 @@ class Bridge(dbus.service.Object):
             path = fh.name
         try:
             s = self.scripting()
-            s.loadScript(path, "mmsimpulse-oneshot")
+            # Unique name per call, for the same deleteLater() reason as above.
+            name = f"mmsimpulse-oneshot-{self.oneshot}"
+            self.oneshot += 1
+            s.loadScript(path, name, signature="ss")
             s.start()
-            s.unloadScript("mmsimpulse-oneshot")
+            s.unloadScript(name)
         except dbus.DBusException as exc:
             print(f"[bridge] one-shot failed: {exc}", file=sys.stderr, flush=True)
         finally:
@@ -194,7 +242,7 @@ class Bridge(dbus.service.Object):
         # KWin restarted (kwin_wayland --replace); the script died with it.
         if new:
             GLib.timeout_add(500, lambda: (self.load_script(), self.schedule())
-                             and GLib.SOURCE_REMOVE)
+                             and GLib.SOURCE_REMOVE)  # noqa: E501
 
 
 def main():

@@ -1,0 +1,43 @@
+#!/bin/bash
+# Shim that stands in for Noctalia inside the mmsimpulse session only.
+#
+# KineticWE registers its shell shortcuts inside the compositor and runs them
+# as `noctalia msg …` — Meta+Space is hardcoded to "noctalia msg panel-toggle
+# launcher" in useractions.cpp, and NoctaliaSettings adds about twenty more.
+# Those fire in our session too, and without this shim they would start the
+# real Noctalia on top of mmsimpulse.
+#
+# start-mmsimpulse puts this directory first on PATH, so only our session sees
+# it; the daily KineticWE+Noctalia session keeps /usr/bin/noctalia. That also
+# means KineticWE's built-in keys keep working here, just pointed at our shell.
+#
+# Anything unmapped exits quietly. Never exec the real Noctalia from here.
+set -euo pipefail
+
+CONFIG=mmsimpulse
+ipc() { exec qs -c "$CONFIG" ipc call "$1" trigger; }
+
+[[ "${1:-}" == "msg" ]] || exit 0
+shift
+
+case "${1:-}:${2:-}" in
+    panel-toggle:launcher)         ipc searchToggle ;;
+    panel-toggle:control-center)   ipc sidebarRightToggle ;;
+    panel-toggle:session)          ipc sessionToggle ;;
+    panel-toggle:clipboard)        ipc overviewClipboardToggle ;;
+    panel-toggle:wallpaper-picker) ipc wallpaperSelectorToggle ;;
+    bar-toggle:*)                  ipc barToggle ;;
+    settings-toggle:*)             ipc settingsToggle ;;
+    window-switcher:*)             ipc overviewWorkspacesToggle ;;
+    wallpaper-random:*)            ipc wallpaperSelectorRandom ;;
+    session:lock)                  ipc lock ;;
+    session:logout)                exec bash -c 'loginctl terminate-session "${XDG_SESSION_ID:-}" || pkill -x kinetic-we' ;;
+    session:suspend)               exec bash -c 'systemctl suspend || loginctl suspend' ;;
+    session:reboot)                exec bash -c 'systemctl reboot || loginctl reboot' ;;
+    session:shutdown)              exec bash -c 'systemctl poweroff || loginctl poweroff' ;;
+    # The supervisor loop in start-mmsimpulse brings the shell straight back.
+    config-reload:*)               exec pkill -f "qs -c $CONFIG" ;;
+    # dock-*, theme-mode-toggle and templates-apply are Noctalia features with
+    # no mmsimpulse equivalent.
+    *) exit 0 ;;
+esac

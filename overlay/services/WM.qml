@@ -54,6 +54,8 @@ Singleton {
     readonly property var workspaceById: backend?.workspaceById ?? ({})
     readonly property var activeWorkspace: backend?.activeWorkspace ?? null
     readonly property var monitors: backend?.monitors ?? []
+    readonly property var windowByAddress: backend?.windowByAddress ?? ({})
+    readonly property var addresses: backend?.addresses ?? []
     readonly property var focusedMonitor: backend?.focusedMonitor ?? null
 
     function focusWindow(id) { backend?.focusWindow(id) }

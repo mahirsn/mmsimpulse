@@ -13,6 +13,8 @@ CONFIG=mmsimpulse
 SHELL_SRC="${MMSIMPULSE_BASE:-$HOME/.config/quickshell/end4-pC}"
 SHELL_DIR="$HOME/.config/quickshell/$CONFIG"
 BIN="$HOME/.local/bin"
+SHIM="$HOME/.local/share/$CONFIG/bin"
+SHELL_CONFIG="$HOME/.config/$CONFIG"
 SESSION="/usr/share/wayland-sessions/$CONFIG.desktop"
 
 command -v kinetic-we >/dev/null || { echo "kinetic-we not found; install the kineticwe package first." >&2; exit 1; }
@@ -27,6 +29,16 @@ rsync -a --delete --exclude '.git' "$SHELL_SRC/" "$SHELL_DIR/"
 cp -v "$REPO"/overlay/services/*.qml "$SHELL_DIR/services/"
 mkdir -p "$SHELL_DIR/scripts/kwin"
 cp -v "$REPO"/kwin-script/*.js "$SHELL_DIR/scripts/kwin/"
+python3 "$REPO/overlay/patch-shell.py" "$SHELL_DIR"
+
+# The skin defaults to ~/.config/illogical-impulse, which the Hyprland session
+# also writes to; patch-shell.py points this copy at ~/.config/mmsimpulse, so
+# seed it once from whatever is already configured.
+if [[ ! -d "$SHELL_CONFIG" && -d "$HOME/.config/illogical-impulse" ]]; then
+    echo "==> seeding $SHELL_CONFIG from ~/.config/illogical-impulse"
+    cp -a "$HOME/.config/illogical-impulse" "$SHELL_CONFIG"
+fi
+mkdir -p "$SHELL_CONFIG"
 
 [[ "${1:-}" == "--shell" ]] && { echo "Done. Reload with: killall qs; qs -c $CONFIG"; exit 0; }
 
@@ -34,6 +46,8 @@ cp -v "$REPO"/kwin-script/*.js "$SHELL_DIR/scripts/kwin/"
 echo "==> bridge -> $BIN"
 mkdir -p "$BIN"
 install -m755 "$REPO/bin/mmsimpulse-kwin-bridge" "$BIN/"
+mkdir -p "$SHIM"
+install -m755 "$REPO/overlay/bin/noctalia" "$SHIM/"
 
 # --- session script --------------------------------------------------------
 # Derived from the installed start-kineticwe rather than forked, so a kineticwe
@@ -54,7 +68,7 @@ edits = [
     # the bridge lives in ~/.local/bin, which a display-manager session does
     # not necessarily have on PATH
     ('export PATH="$INSTALL_PREFIX/bin:$PATH"',
-     'export PATH="$HOME/.local/bin:$INSTALL_PREFIX/bin:$PATH"'),
+     'export PATH="$HOME/.local/share/mmsimpulse/bin:$HOME/.local/bin:$INSTALL_PREFIX/bin:$PATH"'),
 ]
 for old, new in edits:
     if old not in src:

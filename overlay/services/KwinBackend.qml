@@ -25,12 +25,32 @@ Scope {
     // Monitors come from Quickshell itself, which is already compositor
     // agnostic — no need to ask KWin. The `logical` shape matches NiriBackend
     // so downstream consumers do not care which backend is live.
-    readonly property var monitors: Quickshell.screens.map(s => ({
+    // Carries both shapes the skin expects: `logical` is niri's, the flat
+    // fields are `hyprctl monitors -j`'s. The overview reads the latter.
+    readonly property var monitors: Quickshell.screens.map((s, i) => ({
+        id: i,
         name: s.name,
         make: s.model ?? "",
         model: s.model ?? "",
+        x: s.x,
+        y: s.y,
+        width: s.width,
+        height: s.height,
+        scale: s.devicePixelRatio,
+        // KWin reports no struts over D-Bus, so the overview draws the whole
+        // output including the strip the bar sits on.
+        reserved: [0, 0, 0, 0],
+        transform: 0,
+        activeWorkspace: root.activeWorkspace,
         logical: { x: s.x, y: s.y, width: s.width, height: s.height, scale: s.devicePixelRatio }
     }))
+    // QML's JS engine has neither Object.fromEntries nor object spread.
+    readonly property var windowByAddress: {
+        let byAddress = ({});
+        for (const w of root.windowList) byAddress[w.address] = w;
+        return byAddress;
+    }
+    readonly property var addresses: root.windowList.map(w => w.address)
     readonly property var focusedMonitor: root.monitors.find(m => m.name === root.activeOutput)
         ?? root.monitors[0] ?? null
 
@@ -121,7 +141,11 @@ Scope {
                 if (line.trim().length === 0) return;
                 try {
                     const s = JSON.parse(line);
-                    root.windowList = s.windows;
+                    // `monitor` is an index into the monitor list, which only
+                    // exists on this side.
+                    const monIndex = {};
+                    root.monitors.forEach((m, i) => monIndex[m.name] = i);
+                    root.windowList = s.windows.map(w => Object.assign({}, w, { monitor: monIndex[w.output] ?? 0 }));
                     root.workspaces = s.workspaces;
                     let byId = {};
                     for (const ws of s.workspaces) byId[ws.id] = ws;

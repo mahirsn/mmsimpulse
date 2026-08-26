@@ -44,18 +44,27 @@ function push() {
     }));
 }
 
+// A KWin script aborts at the first exception with no visible error unless the
+// kwin_scripting category is on, so one renamed signal would silently stop all
+// window reporting. Connect only what the build actually exposes.
+function connectIfPresent(obj, name) {
+    const signal = obj[name];
+    if (signal && typeof signal.connect === "function") {
+        signal.connect(push);
+    }
+}
+
 function track(w) {
     // Deliberately not frameGeometryChanged: it fires every frame of a drag and
     // would flood the bus. interactiveMoveResizeFinished is the settled edge.
-    w.captionChanged.connect(push);
-    w.desktopsChanged.connect(push);
-    w.minimizedChanged.connect(push);
-    w.fullScreenChanged.connect(push);
-    w.keepAboveChanged.connect(push);
-    w.outputChanged.connect(push);
-    w.interactiveMoveResizeFinished.connect(push);
+    ["captionChanged", "desktopsChanged", "minimizedChanged", "fullScreenChanged",
+     "keepAboveChanged", "outputChanged", "interactiveMoveResizeFinished"]
+        .forEach(name => connectIfPresent(w, name));
 }
 
+// Publish before wiring anything up, so a bad signal name cannot stop the very
+// first snapshot from going out.
+push();
 workspace.windowList().forEach(track);
 workspace.windowAdded.connect(w => { track(w); push(); });
 workspace.windowRemoved.connect(push);
