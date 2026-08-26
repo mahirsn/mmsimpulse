@@ -2,77 +2,101 @@ import QtQuick
 import QtQuick.Layouts
 import qs.modules.common
 import qs.modules.common.widgets
+import qs.services
 import "."
 
-// Bar widget: current voice state at a glance, controls on the widget itself.
-// The popup is hover-driven, so it stays read-only and the actions live on the
-// mouse buttons — the same shape Media.qml uses.
+// Bar widget, following upstream's bar.luau: the glyph colours by state, the
+// active speaker replaces it with their avatar, and a click opens the panel —
+// or launches Discord when it is not running.
 MouseArea {
     id: root
 
     property bool vertical: false
+    readonly property var settings: Config.options.bar.discordVoice ?? ({})
 
-    readonly property bool connected: DiscordVoiceService.inVoice
-    readonly property bool showName: !root.vertical && root.connected
-        && (Config.options.bar.discordVoice?.showChannelName ?? true)
-    readonly property bool hidden: !root.connected
-        && (Config.options.bar.discordVoice?.hideWhenDisconnected ?? false)
+    readonly property bool disconnected: !DiscordVoiceService.inVoice
+    readonly property var speaker: DiscordVoiceService.activeSpeaker
+    readonly property bool hidden: root.disconnected && (root.settings.hideWhenDisconnected ?? false)
+
+    readonly property string glyphColor: {
+        if (root.speaker) return Appearance.colors.colPrimary;
+        if (!root.disconnected)
+            return (DiscordVoiceService.muted || DiscordVoiceService.deafened)
+                ? Appearance.m3colors.m3error : Appearance.colors.colPrimary;
+        if (DiscordVoiceService.status === "error") return Appearance.m3colors.m3error;
+        return Appearance.colors.colSubtext;
+    }
+
+    readonly property string statusLabel: {
+        switch (DiscordVoiceService.status) {
+        case "auth_required": return Translation.tr("Authorize");
+        case "authorizing":
+        case "authenticating": return Translation.tr("Authorizing…");
+        case "discord_unavailable": return Translation.tr("Offline");
+        case "error": return "!";
+        }
+        return "";
+    }
 
     visible: !root.hidden
     implicitWidth: root.hidden ? 0 : (root.vertical ? 36 : contentRow.implicitWidth + 12)
     implicitHeight: root.vertical ? contentRow.implicitHeight + 8 : 32
 
     hoverEnabled: true
-    acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
-
-    onPressed: event => {
-        if (!DiscordVoiceService.authenticated) {
-            DiscordVoiceService.authorize();
+    onClicked: {
+        if (DiscordVoiceService.status === "discord_unavailable") {
+            DiscordVoiceService.openDiscord();
             return;
         }
-        if (event.button === Qt.LeftButton) DiscordVoiceService.setMute(!DiscordVoiceService.muted);
-        else if (event.button === Qt.MiddleButton) DiscordVoiceService.setDeaf(!DiscordVoiceService.deafened);
-        else if (event.button === Qt.RightButton && root.connected) DiscordVoiceService.hangUp();
+        panel.open = !panel.open;
     }
 
-    onWheel: event => {
-        if (!DiscordVoiceService.authenticated) return;
-        const step = event.angleDelta.y > 0 ? 5 : -5;
-        DiscordVoiceService.setMicVolume(Math.max(0, Math.min(100, DiscordVoiceService.micVolume + step)));
-    }
-
-    RowLayout {
+    GridLayout {
         id: contentRow
         anchors.centerIn: parent
-        spacing: 4
+        columns: root.vertical ? 1 : -1
+        rows: root.vertical ? -1 : 1
+        columnSpacing: 6
+        rowSpacing: 6
+
+        // The speaker's avatar takes the glyph's place while they talk.
 
         MaterialSymbol {
-            // Material Symbols has no Discord brand glyph, so the widget shows
-            // the state rather than the app.
-            text: !DiscordVoiceService.authenticated ? "link_off"
-                : DiscordVoiceService.deafened ? "headset_off"
-                : DiscordVoiceService.muted ? "mic_off"
-                : root.connected ? "headset_mic"
-                : "voice_over_off"
+            visible: !(root.speaker && (root.speaker.avatar_path ?? "") !== "")
+            // Material Symbols carries no brand marks, so there is no Discord
+            // glyph to match upstream's default; the state is shown instead.
+            text: root.speaker ? "volume_up" : (root.settings.glyph || "headset_mic")
             iconSize: Appearance.font.pixelSize.larger
-            color: DiscordVoiceService.deafened || DiscordVoiceService.muted
-                ? Appearance.colors.colOnLayer1
-                : DiscordVoiceService.speakingCount > 0
-                    ? Appearance.colors.colPrimary
-                    : Appearance.colors.colOnLayer1
-            opacity: root.connected ? 1 : 0.5
+            color: root.glyphColor
         }
 
         StyledText {
-            visible: root.showName
-            Layout.maximumWidth: 140
+            visible: root.disconnected && root.statusLabel.length > 0 && !root.vertical
+            text: root.statusLabel
+            color: Appearance.colors.colSubtext
+            font.pixelSize: Appearance.font.pixelSize.smaller
+        }
+
+        StyledText {
+            visible: !root.disconnected && !root.vertical && (root.settings.showChannelName ?? true)
+            Layout.maximumWidth: 150
             elide: Text.ElideRight
             text: DiscordVoiceService.channelName
             color: Appearance.colors.colOnLayer1
             font.pixelSize: Appearance.font.pixelSize.smaller
             font.weight: Font.Medium
         }
+
+        StyledText {
+            visible: !root.disconnected
+            text: String(DiscordVoiceService.participants.length)
+            color: Appearance.colors.colSubtext
+            font.pixelSize: Appearance.font.pixelSize.smaller
+        }
     }
 
-    DiscordVoicePanel { hoverTarget: root }
+    DiscordVoicePanel {
+        id: panel
+        anchorItem: root
+    }
 }
