@@ -64,8 +64,28 @@ These are the pieces that exist because of KineticWE in particular:
 | The Arch packaging assumption | The `kineticwe` AUR package installs into `/usr`, not `/opt` as the Gentoo ebuilds do, and it *provides* `/usr/bin/kwin_wayland`. `install.sh` looks for `kinetic-we` on `PATH`. |
 | `[Tiling] Enabled=false` | KineticWE's native tiling; upstream KWin has nothing to switch off. |
 
+## Verified D-Bus surface
+
+Introspected from a live KineticWE 6.7.80 instance with tiling disabled, not
+taken from docs:
+
+```
+org.kde.KWin            /KWin /VirtualDesktopManager /WindowsRunner /Scripting
+                        /Effects /Compositor /Plugins /Session /Layouts
+                        /ColorPicker /ScreenSaver /VirtualKeyboard
+org.kde.kglobalaccel    /kglobalaccel /component/<name>   (owned by the compositor)
+org.kde.KWin.NightLight        replaces hyprsunset
+org.kde.KWin.ScreenShot2       region capture
+org.kde.KWin.Effect.WindowView1  the built-in overview effect
+org.kde.KWin.HighlightWindow
+```
+
+The live `/component/` list includes `org_kde_konsole_desktop` and friends —
+`KServiceActionComponent` instances, i.e. the same `.desktop`-launcher
+mechanism the shortcuts here rely on, already working in this build.
+
 Tiling itself is untouched: KineticWE 6.7.80 exposes no `org.kde.KWin.Tiling`
-D-Bus interface — layouts live in `kwinrc [Tiling]` and as kglobalaccel actions
+D-Bus interface (`/Tiling` returns `UnknownObject`) — layouts live in `kwinrc [Tiling]` and as kglobalaccel actions
 ("Tiling Cycle Layout", "Tiling Switch To MasterStack", …). Noctalia's
 `kineticwe-layouts` community plugin targets such an interface, so it is written
 against a different revision than the one packaged here. Irrelevant while tiling
