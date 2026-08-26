@@ -40,7 +40,7 @@ if [[ ! -d "$SHELL_CONFIG" && -d "$HOME/.config/illogical-impulse" ]]; then
 fi
 mkdir -p "$SHELL_CONFIG"
 
-[[ "${1:-}" == "--shell" ]] && { echo "Done. Reload with: killall qs; qs -c $CONFIG"; exit 0; }
+[[ "${1:-}" == "--shell" ]] && { echo "Done. Reload with: pkill -f "qs -c $CONFIG"; qs -c $CONFIG"; exit 0; }
 
 # --- bridge ----------------------------------------------------------------
 echo "==> bridge -> $BIN"
@@ -82,8 +82,13 @@ PY
 
 # --- session entry ---------------------------------------------------------
 # SDDM only reads /usr/share/wayland-sessions, so this one file needs root.
-echo "==> session entry -> $SESSION (sudo)"
-sed "s|@BIN@|$BIN|" "$REPO/session/$CONFIG.desktop" | sudo tee "$SESSION" >/dev/null
+# Skip the sudo prompt when the entry is already in place and unchanged.
+if ! sed "s|@BIN@|$BIN|" "$REPO/session/$CONFIG.desktop" | cmp -s - "$SESSION" 2>/dev/null; then
+    echo "==> session entry -> $SESSION (sudo)"
+    sed "s|@BIN@|$BIN|" "$REPO/session/$CONFIG.desktop" | sudo tee "$SESSION" >/dev/null
+else
+    echo "==> session entry already current"
+fi
 
 # --- shortcuts -------------------------------------------------------------
 "$REPO/shortcuts/install-shortcuts.sh"
@@ -93,6 +98,6 @@ cat <<MSG
 Done. Log out and pick "mmsimpulse" in SDDM.
 Your KineticWE+Noctalia session is untouched.
 
-Iterate without logging out:  killall qs; qs -c $CONFIG
+Iterate without logging out:  pkill -f "qs -c $CONFIG"; qs -c $CONFIG
 Checklist:                    $REPO/TESTING.md
 MSG

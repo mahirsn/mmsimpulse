@@ -4,7 +4,40 @@ Log into the **mmsimpulse** session from SDDM. Work down the list; each item is
 independent, so a failure early on does not invalidate what comes after.
 
 Keep a terminal open — almost everything is fixable with
-`killall qs; qs -c mmsimpulse` without leaving the session.
+`pkill -f "qs -c mmsimpulse"; qs -c mmsimpulse` without leaving the session.
+
+## Already verified in a nested session
+
+These were exercised with `test/nested.sh` against a real KineticWE instance, so
+they should not need re-checking unless something looks wrong:
+
+| | |
+|---|---|
+| Bar renders, tray, clock, battery, wallpaper | ✅ |
+| Launcher opens with a working search field | ✅ fixed — it was an empty rectangle |
+| Overview grid, active workspace highlight | ✅ |
+| Windows appear in the overview, on the right workspace | ✅ as icon + frame, no live preview |
+| Workspace indicator follows a desktop switch, live | ✅ D-Bus signal path |
+| Session screen with all eight actions | ✅ renders; logout itself is untested, see below |
+| Notification popup | ✅ |
+| Every panel toggle (sidebars, settings, media, OSK, clipboard, emoji, wallpaper, overlay) | ✅ opens without errors |
+| All 24 shortcut names reachable over IPC | ✅ `qs -c mmsimpulse ipc show` |
+
+What a nested session cannot cover, and why:
+
+- **Logout, reboot, shutdown.** In a nested session `XDG_SESSION_ID` belongs to
+  the host, so triggering logout would end the real session rather than the
+  nested one. Untested on purpose.
+- **Multi-monitor behaviour.** The nested compositor has one output. The
+  focused-screen bug you hit is fixed at the source (`WM.focusedMonitor` instead
+  of `Hyprland.focusedMonitor`), but only a real two-screen session proves it.
+- **Actual key presses.** Shortcuts were driven over IPC, which is the second
+  half of the path; the kglobalaccel half needs a real key press.
+- **Screen lock.** Needs `ext-session-lock-v1` and a real session to be
+  meaningful.
+
+Everything below is the full checklist; the items above are marked so you can
+skip them.
 
 ## 0. Ground truth (do this first)
 
@@ -75,7 +108,7 @@ newer than the one this was written against — harmless, but worth noting.
 ## 7. Panels and session
 
 - [ ] `Meta+A` / `Meta+N` toggle the sidebars
-- [ ] `Meta+I` opens settings; changes persist across `killall qs; qs -c mmsimpulse`
+- [ ] `Meta+I` opens settings; changes persist across `pkill -f "qs -c mmsimpulse"; qs -c mmsimpulse`
 - [ ] `Meta+M` shows media controls, and they drive a playing MPRIS client
 - [ ] `Meta+X` opens the session screen; log out from it returns to SDDM (not a black screen)
 - [ ] `Meta+Ctrl+L` locks, and the password unlocks — Quickshell's `WlSessionLock` needs
@@ -101,7 +134,7 @@ Confirm these are *missing*, not broken:
 
 ## 10. Stability
 
-- [ ] `killall qs` — the supervisor restarts the shell within ~2s and the bridge comes back with it
+- [ ] `pkill -f "qs -c mmsimpulse"` — the supervisor restarts the shell within ~2s and the bridge comes back with it
 - [ ] Open and close 10 windows quickly; the window list stays correct (bridge debounce)
 - [ ] Drag a window around for several seconds; no lag and no flood in `~/.local/share/mmsimpulse.log`
 - [ ] Leave the session running for an hour, then re-check the workspace indicator

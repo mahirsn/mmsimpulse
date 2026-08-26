@@ -48,7 +48,11 @@ up)
     cp -f "${XDG_CONFIG_HOME:-$HOME/.config}/kwinrc" "$RUN/config/kwinrc" 2>/dev/null
 
     # KWin logs to journald when it can; force stderr so kwin.log is useful.
+    # A nested compositor that dies should just die: KCrash's handler and
+    # auto-restart make a crash noisier for the host session than it needs
+    # to be.
     XDG_CONFIG_HOME="$RUN/config" \
+    KDE_DEBUG=1 KCRASH_AUTO_RESTART=0 \
     QT_FORCE_STDERR_LOGGING=1 \
     QT_LOGGING_RULES="${QT_LOGGING_RULES:-}${QT_LOGGING_RULES:+;}kwin_scripting.debug=true;kwin_scripting.warning=true" \
         kinetic-we --width "${WIDTH:-1920}" --height "${HEIGHT:-1080}" >"$RUN/kwin.log" 2>&1 &

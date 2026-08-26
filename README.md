@@ -109,7 +109,7 @@ session script from `/usr/bin/start-kineticwe`, and adds an SDDM entry named
 Iterate on the shell without logging out:
 
 ```sh
-killall qs; qs -c mmsimpulse
+pkill -f "qs -c mmsimpulse"; qs -c mmsimpulse
 ```
 
 Full session restart is only needed for changes to `start-mmsimpulse` or the
@@ -136,13 +136,34 @@ Two things to know:
   command is a harmless no-op. The installer warns about keys already bound in
   `kglobalshortcutsrc` instead of overwriting them.
 
-## Tests
+## Testing without logging out
+
+`test/nested.sh` runs a whole mmsimpulse session nested inside whatever session
+you are already in. The compositor renders into a window, so the host can
+screenshot it, and panels can be driven straight over the shell's IPC:
+
+```sh
+test/nested.sh up
+test/nested.sh ipc searchToggle
+test/nested.sh shot launcher      # -> test/shots/launcher.png
+test/nested.sh logs
+test/nested.sh down
+```
+
+The nested compositor gets its own config directory, because KWin persists
+virtual desktops and output layout on exit and a test run must not write those
+back into the session you actually use.
+
+Two things do not work nested and must be checked in a real session: the
+**global shortcuts**, since keys have to reach the nested window, and
+**logout** — `XDG_SESSION_ID` there belongs to the host, so triggering it would
+end your real session.
 
 ```sh
 python3 test_bridge.py     # snapshot merging, id normalisation, desktop mapping
 ```
 
-`TESTING.md` is the per-component checklist for a live session.
+`TESTING.md` is the per-component checklist.
 
 ## Layout
 
@@ -153,9 +174,30 @@ overlay/services/               files laid over the upstream skin
   KwinBackend.qml               the WM backend for KWin
   WM.qml                        upstream + "kde" detection and KwinBackend
   CompositorGlobalShortcut.qml  upstream + the kglobalaccel path
-session/                        SDDM session entry
+overlay/patch-shell.py          scripted edits to the rest of the skin
+overlay/bin/noctalia            PATH shim, this session only
+session/                        session entry
 shortcuts/                      shortcut table and installer
+test/nested.sh                  run a session nested inside the current one
 ```
 
 `WM.qml` and `CompositorGlobalShortcut.qml` are full copies of the upstream
 files rather than patches, so they need re-syncing if the skin changes them.
+Everything else is rewritten by `patch-shell.py`, which fails the install if a
+rule stops matching — that is the signal to re-read the upstream file.
+
+## Known gaps
+
+- **No live window previews in the overview.** They need a foreign-toplevel
+  protocol KWin does not implement, so windows show as an icon and frame.
+- **Hold-to-show shortcuts do not exist.** kglobalaccel launches a command and
+  has no release event, so `searchToggleRelease`, `workspaceNumber` and the
+  `*Open`/`*Close` pairs stay unbound.
+- **Free-form window dragging in the overview is Hyprland-only.** Dropping a
+  window on another workspace works; dropping it at a position does not.
+- **The overview covers the bar's strip**, because KWin reports no struts over
+  D-Bus and `reserved` is therefore all zeroes.
+- **Hyprland-only settings pages are inert** — animations, `hyprland.conf`
+  editing, monitor layout, hyprsunset. The KDE equivalents are in System
+  Settings, and night light is `org.kde.KWin.NightLight`.
+- **`overview.style: "niri"` is not ported**; leave it at the default.
