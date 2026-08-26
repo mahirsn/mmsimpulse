@@ -55,6 +55,10 @@ assert wa["onAllDesktops"] is False
 assert bridge.build_snapshot({}, desktops, "gone")["current"] == 1
 assert bridge.build_snapshot({}, [], "gone")["current"] == 1
 
+ma = bridge.move_active_script(4, True)
+assert "want = 4" in ma and "w.desktops = [d]" in ma and "if (true)" in ma, ma
+assert "if (false)" in bridge.move_active_script(4, False)
+
 ds = bridge.desktop_script("DP-1", 3)
 assert "want = 3" in ds and '"DP-1"' in ds and "setCurrentDesktopForScreen" in ds, ds
 # an unknown output must still switch rather than do nothing

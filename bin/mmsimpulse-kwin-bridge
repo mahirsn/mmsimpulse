@@ -162,6 +162,24 @@ def desktop_script(output_name, position):
     )
 
 
+def move_active_script(position, follow):
+    """Move the focused window to a desktop, optionally following it there.
+
+    KWin's own "Window to Desktop N" moves without following, which is the
+    Meta+Alt+N behaviour; this covers Meta+Shift+N, which Hyprland follows.
+    Taking workspace.activeWindow here avoids having to know a window id.
+    """
+    return (
+        "const want = %d;\n"
+        "const d = workspace.desktops.find(d => d.x11DesktopNumber === want);\n"
+        "const w = workspace.activeWindow;\n"
+        "if (d && w) {\n"
+        "    w.desktops = [d];\n"
+        "    if (%s) workspace.setCurrentDesktopForScreen(d, w.output || workspace.activeScreen);\n"
+        "}\n" % (int(position), "true" if follow else "false")
+    )
+
+
 def window_script(window_uuid, action, value=""):
     """One-shot KWin script source performing `action` on one window."""
     if action == "move":
@@ -226,6 +244,10 @@ class Bridge(dbus.service.Object):
         self.schedule()
 
     # -- inbound from the shell -------------------------------------------
+    @dbus.service.method(BUS_NAME, in_signature="ib", out_signature="")
+    def MoveActiveWindowToDesktop(self, position, follow):
+        self.run_once(move_active_script(position, follow))
+
     @dbus.service.method(BUS_NAME, in_signature="si", out_signature="")
     def SetDesktopForOutput(self, output_name, position):
         self.run_once(desktop_script(output_name, position))
