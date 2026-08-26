@@ -138,6 +138,39 @@ SPECIFIC = [
      "widgetMonitor: HyprlandData.monitors.find(m => m.id == root.monitor.id)",
      "widgetMonitor: HyprlandData.monitors.find(m => m.id == root.monitor.id) ?? root.monitor"),
 
+    # --- plugin widgets -----------------------------------------------------
+    # The bar already resolves a layout name to ./<Name>.qml, so a widget only
+    # needs a file. Let names listed in pluginWidgets resolve to plugins/<name>/
+    # instead, which keeps a plugin out of the skin's own modules: it is a
+    # directory you drop in and a name you add, and deleting the directory
+    # removes it. Not a plugin system — just the search path.
+    ("modules/ii/bar/BarContent.qml",
+     """    function getWidgetUrl(name) {
+        if (!name) return "";
+        let formattedName = name.charAt(0).toUpperCase() + name.slice(1);
+        return Qt.resolvedUrl("./" + formattedName + ".qml");
+    }""",
+     """    function getWidgetUrl(name) {
+        if (!name) return "";
+        let formattedName = name.charAt(0).toUpperCase() + name.slice(1);
+        if ((Config.options.bar.pluginWidgets ?? []).includes(name))
+            return Qt.resolvedUrl(`../../../plugins/${name}/${formattedName}.qml`);
+        return Qt.resolvedUrl("./" + formattedName + ".qml");
+    }"""),
+    ("modules/common/Config.qml",
+     """                property JsonObject layouts: JsonObject {
+                    property list<string> leftLayout: ["launcherButton", "workspaces", "activeWindow"]""",
+     """                // Names here resolve to plugins/<name>/ instead of the
+                // bar's own modules. Add the name to a layout as well.
+                property list<string> pluginWidgets: []
+                property JsonObject discordVoice: JsonObject {
+                    property bool showChannelName: true
+                    property bool hideWhenDisconnected: false
+                }
+
+                property JsonObject layouts: JsonObject {
+                    property list<string> leftLayout: ["launcherButton", "workspaces", "activeWindow"]"""),
+
     # --- overview grid size -------------------------------------------------
     # The grid is fixed at Config's rows x columns because Hyprland numbers
     # workspaces 1..N whether or not they exist. KWin has a real, usually
