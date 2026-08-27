@@ -7,6 +7,7 @@ there: stock KWin does not offer org_kde_kwin_fake_input, and Xwayland's XTEST
 never reaches Wayland clients like the shell.
 """
 import json
+import os
 import socket
 import sys
 import time
@@ -27,13 +28,16 @@ def main():
         # screendump returns before the file is fully written on some builds.
         time.sleep(0.5)
     elif command in ("move", "click"):
-        # QEMU's absolute axes are 0..32767 across the whole screen.
-        x, y, width, height = (int(n) for n in args[:4])
+        # QEMU's absolute axes are 0..32767 across the whole screen, so the
+        # mapping needs the screen size — and with a windowed display the guest
+        # resizes to the window, so it cannot be assumed. Ask the framebuffer.
+        x, y = (int(n) for n in args[:2])
+        width, height = framebuffer_size(f, sock_path)
         events = [{"type": "abs", "data": {"axis": "x", "value": x * 32767 // width}},
                   {"type": "abs", "data": {"axis": "y", "value": y * 32767 // height}}]
         send(f, {"execute": "input-send-event", "arguments": {"events": events}})
         if command == "click":
-            button = args[4] if len(args) > 4 else "left"
+            button = args[2] if len(args) > 2 else "left"
             time.sleep(0.2)
             for down in (True, False):
                 send(f, {"execute": "input-send-event", "arguments": {"events": [
@@ -58,6 +62,23 @@ def main():
                                         for name in args]}})
     else:
         send(f, {"execute": command})
+
+
+def framebuffer_size(f, sock_path):
+    """Width and height of what the guest is currently displaying."""
+    target = os.path.join(os.path.dirname(sock_path), "size.ppm")
+    send(f, {"execute": "screendump", "arguments": {"filename": target}})
+    time.sleep(0.3)
+    with open(target, "rb") as ppm:
+        fields = []
+        while len(fields) < 3:
+            line = ppm.readline()
+            if not line:
+                raise SystemExit("qmp: unreadable screendump")
+            if line.startswith(b"#"):
+                continue
+            fields += line.split()
+    return int(fields[1]), int(fields[2])
 
 
 def send(f, msg):

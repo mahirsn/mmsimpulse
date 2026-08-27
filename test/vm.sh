@@ -100,7 +100,7 @@ type|key|keydown|keyup)
 
 click|move)
     # test/vm.sh click <x> <y> [left|right]   coordinates in guest pixels
-    python3 "$REPO/test/qmp.py" "$VM/qmp.sock" "$1" "$2" "$3" 1920 1080 "${4:-left}"
+    python3 "$REPO/test/qmp.py" "$VM/qmp.sock" "$1" "$2" "$3" "${4:-left}"
     ;;
 
 shot)

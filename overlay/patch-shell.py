@@ -182,22 +182,6 @@ SPECIFIC = [
         : Math.max(1, Math.ceil(WM.workspaces.length / root.overviewColumns))
     readonly property int workspacesShown: root.overviewRows * root.overviewColumns"""),
 
-    # --- dock context menu --------------------------------------------------
-    # Right-click only toggled the pin, with nothing on screen to say so. It
-    # now opens a menu carrying the desktop entry's own actions — the same
-    # ones the launcher lists — plus pin and close.
-    ("modules/ii/bar/DocktoPanel.qml",
-     "                        altAction:         () => { TaskbarApps.togglePin(slotItem.appId) }",
-     "                        altAction:         () => { slotMenu.open = !slotMenu.open }\n"
-     "\n"
-     "                        DockAppMenu {\n"
-     "                            id: slotMenu\n"
-     "                            anchorItem: slotItem\n"
-     "                            appId: slotItem.appId\n"
-     "                            desktopEntry: slotItem.deskEntry\n"
-     "                            toplevels: slotItem.appEntry?.toplevels ?? []\n"
-     "                        }"),
-
     # --- popup placement ----------------------------------------------------
     # Without a screen the PanelWindow lands on whichever one Quickshell picks
     # first, so hovering a widget on the second monitor opened its popup on the
@@ -239,46 +223,6 @@ SPECIFIC = [
      """+ ` && grim -o '${StringUtils.shellSingleQuoteEscape(screenScope.screenName)}' -`""",
      """+ ` && ${WM.compositor === "hyprland" ? "grim -o" : "mmsimpulse-screenshot"} '${StringUtils.shellSingleQuoteEscape(screenScope.screenName)}' -`
                     + `${WM.compositor === "hyprland" ? "" : ` ${screenScope.modelData.x},${screenScope.modelData.y},${screenScope.modelData.width},${screenScope.modelData.height}`}`"""),
-
-    # The tray menu's rows know their own size, but the ColumnLayout holding
-    # them reports none, so the popup stays 28x37 — the size of its own padding
-    # — and the menu is an empty stub. Measuring the rows gives it a real size.
-    # (This is necessary but not sufficient: see TESTING.md, the popup surface
-    # still never reaches KWin.)
-    ("modules/ii/bar/SysTrayMenu.qml",
-     """    component SubMenu: ColumnLayout {
-        id: submenu
-        required property QsMenuHandle handle
-        property bool isSubMenu: false
-        property bool shown: false
-        opacity: shown ? 1 : 0""",
-     """    component SubMenu: ColumnLayout {
-        id: submenu
-        required property QsMenuHandle handle
-        property bool isSubMenu: false
-        property bool shown: false
-        opacity: shown ? 1 : 0
-
-        implicitWidth: {
-            menuEntriesRepeater.count;
-            let w = 0;
-            for (let i = 0; i < submenu.children.length; i++) {
-                const child = submenu.children[i];
-                if (child.visible)
-                    w = Math.max(w, child.implicitWidth);
-            }
-            return w;
-        }
-        implicitHeight: {
-            menuEntriesRepeater.count;
-            let h = 0;
-            for (let i = 0; i < submenu.children.length; i++) {
-                const child = submenu.children[i];
-                if (child.visible)
-                    h += child.implicitHeight;
-            }
-            return h;
-        }"""),
 
     # --- taskbar ------------------------------------------------------------
     # Same ToplevelManager gap as the overview: the dock's list of running apps
