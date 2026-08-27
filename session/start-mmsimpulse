@@ -1,0 +1,154 @@
+#!/bin/bash
+# mmsimpulse session.
+#
+# A Wayland session made of a KWin compositor and the mmsimpulse shell, and
+# nothing else. There is no desktop environment here — no plasmashell, no
+# session manager, no Plasma workspace. Everything a Plasma session would
+# normally provide and the shell actually needs is started explicitly below.
+#
+# Works with any KWin 6: the stock `kwin` package, or a fork such as KineticWE
+# which provides the same binary. Nothing below is specific to either.
+#
+# Deliberately not `set -e`: the supervisor loop at the end has to survive the
+# shell exiting non-zero, which is exactly when it needs to restart it.
+set -uo pipefail
+
+CONFIG=mmsimpulse
+LOG="$HOME/.local/share/$CONFIG.log"
+mkdir -p "$(dirname "$LOG")"
+
+# ---------------------------------------------------------------------------
+# Session identity
+# ---------------------------------------------------------------------------
+# KDE, not mmsimpulse: this is what selects the KWin backend in the shell, the
+# KDE portal backend, and kde-open over the long-removed kfmclient in Electron
+# apps. XDG_MENU_PREFIX is what lets kbuildsycoca6 build the application menu,
+# without which global shortcuts and the launcher come up empty.
+export XDG_CURRENT_DESKTOP=KDE
+export XDG_SESSION_DESKTOP=KDE
+export XDG_SESSION_TYPE=wayland
+export KDE_SESSION_VERSION=6
+export KDE_FULL_SESSION=true
+export XDG_MENU_PREFIX=plasma-
+export PATH="$HOME/.local/share/$CONFIG/bin:$HOME/.local/bin:$PATH"
+
+# A Hyprland session exports QT_QPA_PLATFORM="wayland;xcb" and the user systemd
+# manager outlives a logout, so the value leaks in here. Quickshell's IPC client
+# does not recognise the multi-value form, decides the caller is on X11, and
+# then refuses to talk to a shell it recorded as Wayland — which silently
+# breaks every shortcut kglobalaccel launches.
+unset QT_QPA_PLATFORM
+systemctl --user unset-environment QT_QPA_PLATFORM 2>/dev/null
+
+find_bin() {
+    local name="$1" path
+    for path in "/usr/libexec/$name" "/usr/lib/$name" "/usr/bin/$name" /usr/lib/*/libexec/"$name"; do
+        [[ -x "$path" ]] && { printf '%s\n' "$path"; return 0; }
+    done
+    command -v "$name" 2>/dev/null
+}
+
+# ---------------------------------------------------------------------------
+# A D-Bus session bus, for TTY logins that have none
+# ---------------------------------------------------------------------------
+if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
+    exec dbus-run-session -- "$0" "$@"
+fi
+
+# ---------------------------------------------------------------------------
+# Compositor
+# ---------------------------------------------------------------------------
+# Naming the socket removes the usual guessing game: the alternative is to diff
+# $XDG_RUNTIME_DIR before and after, which finds nothing when a previous
+# session left a socket behind and the new one reuses that name.
+export WAYLAND_DISPLAY="$CONFIG-$$"
+
+# KineticWE embeds kglobalacceld and claims org.kde.kglobalaccel at startup; a
+# standalone daemon left over from a Plasma session makes that registration
+# fail and takes every shortcut down with it.
+systemctl --user stop plasma-kglobalaccel.service 2>/dev/null
+pkill -x kglobalacceld 2>/dev/null
+
+kwin_wayland --xwayland --socket "$WAYLAND_DISPLAY" >"$HOME/.local/share/$CONFIG-compositor.log" 2>&1 &
+KWIN_PID=$!
+trap 'kill "$KWIN_PID" 2>/dev/null' EXIT
+
+for _ in $(seq 1 40); do
+    [[ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$WAYLAND_DISPLAY" ]] && break
+    sleep 0.25
+done
+[[ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$WAYLAND_DISPLAY" ]] || {
+    echo "compositor did not create its Wayland socket; aborting" >&2
+    exit 1
+}
+
+# Ask the compositor's own Xwayland which display it took, rather than diffing
+# /tmp/.X11-unix. A stale socket from a previous session makes that diff find
+# nothing, DISPLAY stays unset, and every X11 client dies at startup with
+# "GLFW: The DISPLAY environment variable is missing".
+for _ in $(seq 1 40); do
+    _xpid="$(pgrep -P "$KWIN_PID" -x Xwayland | head -1)"
+    if [[ -n "$_xpid" && -r "/proc/$_xpid/cmdline" ]]; then
+        _disp="$(tr '\0' '\n' < "/proc/$_xpid/cmdline" | grep -m1 '^:[0-9]')"
+        [[ -n "$_disp" ]] && { export DISPLAY="$_disp"; break; }
+    fi
+    sleep 0.25
+done
+[[ -n "${DISPLAY:-}" ]] || echo "Warning: no Xwayland display found; X11 clients will fail" >&2
+
+# ---------------------------------------------------------------------------
+# Services the shell depends on
+# ---------------------------------------------------------------------------
+# Publish the session environment so D-Bus and systemd activated services start
+# with WAYLAND_DISPLAY and DISPLAY set instead of crashing on launch.
+dbus-update-activation-environment --systemd --all 2>/dev/null
+
+# Without a service cache, System Settings finds no KCMs and kglobalacceld
+# finds none of the shortcut entries.
+command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 --noincremental 2>/dev/null
+
+# Global shortcuts. A KWin fork may already embed the daemon and own the name,
+# in which case starting another would fight it for the registration.
+if ! busctl --user status org.kde.kglobalaccel >/dev/null 2>&1; then
+    KGA="$(find_bin kglobalacceld)"
+    [[ -n "$KGA" ]] && nohup "$KGA" >>"$LOG" 2>&1 &
+fi
+
+# Portals: screen sharing, file pickers, and the shell's screenshot paths. The
+# KDE backend must be up before the frontend so the frontend can discover its
+# capabilities. Other compositors' backends are cleared out because a leftover
+# one keeps owning its impl name with nothing behind it.
+killall -q xdg-desktop-portal-kde xdg-desktop-portal xdg-desktop-portal-gtk \
+           xdg-desktop-portal-hyprland xdg-desktop-portal-wlr xdg-document-portal 2>/dev/null
+sleep 1
+PORTAL_KDE="$(find_bin xdg-desktop-portal-kde)"
+[[ -n "$PORTAL_KDE" ]] && { nohup "$PORTAL_KDE" >>"$LOG" 2>&1 & sleep 2; }
+PORTAL="$(find_bin xdg-desktop-portal)"
+[[ -n "$PORTAL" ]] && nohup "$PORTAL" >>"$LOG" 2>&1 &
+
+# Power management: idle timeouts, DPMS, suspend, brightness. Optional — the
+# session is usable without it, it just never dims or sleeps.
+UPOWERD="$(find_bin upowerd)"
+[[ -n "$UPOWERD" ]] && nohup "$UPOWERD" >>"$LOG" 2>&1 &
+POWERDEVIL="$(find_bin org_kde_powerdevil)"
+[[ -n "$POWERDEVIL" ]] && nohup "$POWERDEVIL" >>"$LOG" 2>&1 &
+
+# ---------------------------------------------------------------------------
+# The shell, supervised
+# ---------------------------------------------------------------------------
+# `|| true` matters even without `set -e` here: it keeps a non-zero exit from
+# ending the loop that exists to restart the shell.
+(
+    while true; do
+        qs -c "$CONFIG" >"$LOG" 2>&1 || true
+        echo "$CONFIG exited, restarting in 2s..." >&2
+        sleep 2
+    done
+) &
+SHELL_PID=$!
+
+# The compositor exiting is what ends the session.
+wait "$KWIN_PID"
+kill "$SHELL_PID" 2>/dev/null
+pkill -f "qs -c $CONFIG" 2>/dev/null
+trap - EXIT
