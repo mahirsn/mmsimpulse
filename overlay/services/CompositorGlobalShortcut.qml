@@ -4,7 +4,7 @@ import Quickshell.Io
 import qs.services
 
 // Hyprland delivers shortcuts to the shell over hyprland-global-shortcuts-v1.
-// KWin has no such protocol, but KineticWE's embedded kglobalacceld can launch
+// KWin has no such protocol, but kglobalacceld can launch
 // a .desktop entry from a shortcut, so on KDE the key runs
 // `qs -c mmsimpulse ipc call <name> trigger` and lands here instead.
 // shortcuts/install-shortcuts.sh generates one .desktop per name below.

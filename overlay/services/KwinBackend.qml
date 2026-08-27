@@ -3,7 +3,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-// WM backend for KineticWE (and any KWin 6 session). Same contract as
+// WM backend for KWin 6 — stock kwin or any fork of it. Same contract as
 // NiriBackend.qml, same shape: a long-lived process streams JSON state in,
 // commands go out as one-shot calls.
 //
@@ -11,7 +11,7 @@ import Quickshell.Io
 // directly because KWin publishes no window list on D-Bus and Quickshell has
 // no D-Bus API in QML. See bin/mmsimpulse-kwin-bridge for why.
 //
-// Tiling is deliberately absent: mmsimpulse runs KineticWE with [Tiling]
+// Tiling is deliberately absent: mmsimpulse expects [Tiling]
 // Enabled=false, and WM.qml's contract has no swap/resize/split to implement.
 Scope {
     id: root

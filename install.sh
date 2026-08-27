@@ -92,6 +92,8 @@ mkdir -p "$SHELL_CONFIG"
 echo "==> bridge -> $BIN"
 mkdir -p "$BIN"
 install -m755 "$REPO"/bin/mmsimpulse-* "$BIN/"
+# Only useful on a KWin fork that registers its own `noctalia msg …` shortcuts
+# inside the compositor; harmless everywhere else, where nothing calls it.
 mkdir -p "$SHIM"
 install -m755 "$REPO/overlay/bin/noctalia" "$SHIM/"
 
@@ -134,7 +136,7 @@ fi
 cat <<MSG
 
 Done. Log out and pick "mmsimpulse" in SDDM.
-Your KineticWE+Noctalia session is untouched.
+Any other session on this machine is untouched.
 
 Iterate without logging out:  pkill -f "qs -c $CONFIG"; qs -c $CONFIG
 Checklist:                    $REPO/TESTING.md

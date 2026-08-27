@@ -22,7 +22,7 @@ Singleton {
         if (combined.includes("niri")) return "niri";
         if (combined.includes("sway")) return "sway";
         if (combined.includes("mango")) return "mango";
-        // KineticWE identifies as KDE (start-kineticwe exports
+        // A KWin session identifies as KDE (start-mmsimpulse exports
         // XDG_CURRENT_DESKTOP=KDE so portals and KDE apps behave), and stock
         // Plasma does too. Both are KWin, so both get the same backend.
         if (combined.includes("kde")) return "kde";
