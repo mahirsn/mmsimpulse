@@ -91,7 +91,7 @@ mkdir -p "$SHELL_CONFIG"
 # --- bridge ----------------------------------------------------------------
 echo "==> bridge -> $BIN"
 mkdir -p "$BIN"
-install -m755 "$REPO/bin/mmsimpulse-kwin-bridge" "$BIN/"
+install -m755 "$REPO"/bin/mmsimpulse-* "$BIN/"
 mkdir -p "$SHIM"
 install -m755 "$REPO/overlay/bin/noctalia" "$SHIM/"
 

@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+"""Capture one output to a PNG, the way `grim -o <name> <file>` does.
+
+grim speaks wlr-screencopy, which KWin does not implement, so it silently
+produces nothing and every screenshot path downstream crops a file that was
+never written. KWin's own org.kde.KWin.ScreenShot2 does the same job: it writes
+raw pixels into a pipe and answers with their layout.
+
+Usage: mmsimpulse-screenshot <output-name> <file.png|->  ("-" writes to stdout)
+"""
+
+import os
+import subprocess
+import sys
+
+import dbus
+
+SERVICE = "org.kde.KWin.ScreenShot2"
+PATH = "/org/kde/KWin/ScreenShot2"
+
+# QImage formats KWin hands back, mapped to how ImageMagick names the byte order.
+FORMATS = {
+    4: "bgra",   # RGB32, the alpha byte is unused
+    5: "bgra",   # ARGB32
+    6: "bgra",   # ARGB32_Premultiplied
+    17: "rgba",  # RGBA8888
+    18: "rgba",  # RGBA8888_Premultiplied
+}
+
+
+def main():
+    if len(sys.argv) != 3:
+        print(__doc__.strip().splitlines()[-1], file=sys.stderr)
+        return 2
+    output_name, target = sys.argv[1], sys.argv[2]
+
+    read_fd, write_fd = os.pipe()
+    try:
+        iface = dbus.Interface(dbus.SessionBus().get_object(SERVICE, PATH), SERVICE)
+        result = iface.CaptureScreen(
+            output_name, {"include-cursor": False},
+            dbus.types.UnixFd(write_fd))
+    except dbus.DBusException as exc:
+        os.close(read_fd)
+        os.close(write_fd)
+        print(f"capture failed: {exc}", file=sys.stderr)
+        return 1
+    # The compositor holds its own copy now; ours has to go or the read blocks
+    # forever waiting for an end that never comes.
+    os.close(write_fd)
+
+    width = int(result["width"])
+    height = int(result["height"])
+    stride = int(result["stride"])
+    fmt = FORMATS.get(int(result["format"]))
+    if fmt is None:
+        os.close(read_fd)
+        print(f"unsupported pixel format: {result['format']}", file=sys.stderr)
+        return 1
+
+    with os.fdopen(read_fd, "rb") as pipe:
+        raw = pipe.read(stride * height)
+
+    # Rows can be padded, and ImageMagick has no way to be told a stride.
+    if stride != width * 4:
+        raw = b"".join(raw[r * stride:r * stride + width * 4] for r in range(height))
+
+    # Always PNG, and say so explicitly: callers pass names without an
+    # extension, and ImageMagick picks its format from the extension. grim
+    # writes PNG regardless, so matching it keeps those callers working.
+    out = "png:-" if target == "-" else f"png:{target}"
+    convert = subprocess.run(
+        ["magick", "-size", f"{width}x{height}", "-depth", "8", f"{fmt}:-", out],
+        input=raw, capture_output=(target != "-"))
+    if convert.returncode:
+        if convert.stderr:
+            print(convert.stderr.decode()[:300], file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

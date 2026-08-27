@@ -182,6 +182,44 @@ SPECIFIC = [
         : Math.max(1, Math.ceil(WM.workspaces.length / root.overviewColumns))
     readonly property int workspacesShown: root.overviewRows * root.overviewColumns"""),
 
+    # --- popup placement ----------------------------------------------------
+    # Without a screen the PanelWindow lands on whichever one Quickshell picks
+    # first, so hovering a widget on the second monitor opened its popup on the
+    # first. Follow the hovered widget's own window.
+    ("modules/common/widgets/StyledPopup.qml",
+     "        anchors.left: root.barEdge",
+     "        screen: root.hoverTarget?.QsWindow?.screen ?? null\n"
+     "        anchors.left: root.barEdge"),
+
+    # --- screenshots --------------------------------------------------------
+    # grim speaks wlr-screencopy, which KWin does not implement, so every
+    # screenshot path silently produced nothing: the region selector cropped a
+    # file that was never written, and neither copied nor saved anything.
+    # org.kde.KWin.ScreenShot2 does the same job per named output.
+    ("modules/common/utils/TempScreenshotProcess.qml",
+     """    command: ["bash", "-c", `mkdir -p '${StringUtils.shellSingleQuoteEscape(screenshotDir)}' && grim -o '${StringUtils.shellSingleQuoteEscape(screen.name)}' '${StringUtils.shellSingleQuoteEscape(screenshotPath)}'`]""",
+     """    readonly property string captureCommand: WM.compositor === "hyprland"
+        ? `grim -o '${StringUtils.shellSingleQuoteEscape(screen.name)}' '${StringUtils.shellSingleQuoteEscape(screenshotPath)}'`
+        : `mmsimpulse-screenshot '${StringUtils.shellSingleQuoteEscape(screen.name)}' '${StringUtils.shellSingleQuoteEscape(screenshotPath)}'`
+    command: ["bash", "-c", `mkdir -p '${StringUtils.shellSingleQuoteEscape(screenshotDir)}' && ${captureCommand}`]"""),
+
+    # The quick paths bypass the shell's own selector and shell out to
+    # grim+slurp. spectacle brings its own region UI and is what KDE ships.
+    ("modules/ii/regionSelector/RegionSelector.qml",
+     """const cmd = `mkdir -p '${saveDir}' && filePath="${saveDir}/screenshot-$(date '+%Y-%m-%d_%H.%M.%S').png" && grim -g "$(slurp)" "$filePath" && cat "$filePath" | wl-copy && notify-send "Screenshot Saved" "Saved to $filePath" -a "Screen Snip" -i "image-x-generic"`;""",
+     """const capture = WM.compositor === "hyprland"
+                    ? `grim -g "$(slurp)" "$filePath"`
+                    : `spectacle -r -b -n -o "$filePath"`;
+                const cmd = `mkdir -p '${saveDir}' && filePath="${saveDir}/screenshot-$(date '+%Y-%m-%d_%H.%M.%S').png" && ${capture} && cat "$filePath" | wl-copy && notify-send "Screenshot Saved" "Saved to $filePath" -a "Screen Snip" -i "image-x-generic"`;"""),
+    ("modules/ii/regionSelector/RegionSelector.qml",
+     """const cmd = `grim -g "$(slurp)" - | wl-copy && notify-send "Screenshot Copied" "Copied to clipboard" -a "Screen Snip" -i "image-x-generic"`;""",
+     """const cmd = WM.compositor === "hyprland"
+                    ? `grim -g "$(slurp)" - | wl-copy && notify-send "Screenshot Copied" "Copied to clipboard" -a "Screen Snip" -i "image-x-generic"`
+                    : `spectacle -r -b -n -c && notify-send "Screenshot Copied" "Copied to clipboard" -a "Screen Snip" -i "image-x-generic"`;"""),
+    ("services/Brightness.qml",
+     """+ ` && grim -o '${StringUtils.shellSingleQuoteEscape(screenScope.screenName)}' -`""",
+     """+ ` && ${WM.compositor === "hyprland" ? "grim -o" : "mmsimpulse-screenshot"} '${StringUtils.shellSingleQuoteEscape(screenScope.screenName)}' -`"""),
+
     # --- taskbar ------------------------------------------------------------
     # Same ToplevelManager gap as the overview: the dock's list of running apps
     # comes out empty on KWin. The dock only needs appId, activated and
