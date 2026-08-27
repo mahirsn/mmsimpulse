@@ -114,17 +114,23 @@ if ! busctl --user status org.kde.kglobalaccel >/dev/null 2>&1; then
     [[ -n "$KGA" ]] && nohup "$KGA" >>"$LOG" 2>&1 &
 fi
 
-# Portals: screen sharing, file pickers, and the shell's screenshot paths. The
-# KDE backend must be up before the frontend so the frontend can discover its
-# capabilities. Other compositors' backends are cleared out because a leftover
-# one keeps owning its impl name with nothing behind it.
-killall -q xdg-desktop-portal-kde xdg-desktop-portal xdg-desktop-portal-gtk \
-           xdg-desktop-portal-hyprland xdg-desktop-portal-wlr xdg-document-portal 2>/dev/null
-sleep 1
-PORTAL_KDE="$(find_bin xdg-desktop-portal-kde)"
-[[ -n "$PORTAL_KDE" ]] && { nohup "$PORTAL_KDE" >>"$LOG" 2>&1 & sleep 2; }
-PORTAL="$(find_bin xdg-desktop-portal)"
-[[ -n "$PORTAL" ]] && nohup "$PORTAL" >>"$LOG" 2>&1 &
+# Portals are D-Bus activated: asking for org.freedesktop.impl.portal.desktop.kde
+# starts plasma-xdg-desktop-portal-kde.service on demand. Starting one by hand
+# takes the bus name away from its unit, and then nothing restarts it when it
+# exits — which looks exactly like the KDE backend refusing to autostart.
+#
+# So there is nothing to launch here. All that is needed is a clean slate now
+# that the environment above is published, so the next activation inherits
+# WAYLAND_DISPLAY and XDG_CURRENT_DESKTOP instead of a previous session's.
+systemctl --user stop xdg-desktop-portal.service xdg-desktop-portal-gtk.service \
+    xdg-desktop-portal-hyprland.service xdg-desktop-portal-wlr.service \
+    plasma-xdg-desktop-portal-kde.service 2>/dev/null
+# Matched by path: the comm name is truncated to 15 characters, so `pkill -x`
+# never matches these and the stale process keeps the bus name — which is what
+# stops the unit from starting.
+pkill -f '/xdg-desktop-portal-hyprland$' 2>/dev/null
+pkill -f '/xdg-desktop-portal-wlr$' 2>/dev/null
+pkill -f '/xdg-desktop-portal-kde$' 2>/dev/null
 
 # Power management: idle timeouts, DPMS, suspend, brightness. Optional — the
 # session is usable without it, it just never dims or sleeps.
