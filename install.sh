@@ -109,6 +109,25 @@ else
     echo "==> session entry already current"
 fi
 
+# --- portal backend --------------------------------------------------------
+# xdg-desktop-portal reads ~/.config/xdg-desktop-portal/portals.conf for every
+# session, and a machine that also runs Hyprland usually has one pinning
+# default=hyprland;gtk. In a KDE session that sends screen-share requests to a
+# backend with no compositor behind it: the frontend reports no sources at all
+# and the picker never appears. A desktop-specific file outranks it and applies
+# only here, so the other session keeps its own setup.
+PORTAL_CONF="$HOME/.config/xdg-desktop-portal/kde-portals.conf"
+if [[ ! -f "$PORTAL_CONF" ]]; then
+    echo "==> portal backend -> $PORTAL_CONF"
+    mkdir -p "$(dirname "$PORTAL_CONF")"
+    cat > "$PORTAL_CONF" <<'PORTAL'
+[preferred]
+default=kde
+org.freedesktop.impl.portal.Settings=kde;gtk;
+org.freedesktop.impl.portal.Secret=kwallet
+PORTAL
+fi
+
 # --- shortcuts -------------------------------------------------------------
 "$REPO/shortcuts/install-shortcuts.sh"
 

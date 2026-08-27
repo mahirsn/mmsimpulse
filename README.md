@@ -74,6 +74,15 @@ workspaces, the way Hyprland behaves.
   editing, monitor layout, hyprsunset. Their KDE equivalents are in System
   Settings, and night light is `org.kde.KWin.NightLight`.
 
+## Screen sharing
+
+If the machine also runs Hyprland it probably has
+`~/.config/xdg-desktop-portal/portals.conf` pinning `default=hyprland;gtk`.
+That file applies to every session, so a KDE session asks the Hyprland backend
+for screen sources it cannot provide, the frontend reports none at all, and the
+share picker never appears. The installer writes a `kde-portals.conf` beside it,
+which outranks it and applies only here.
+
 ## How it works
 
 The skin routes compositor access through `services/WM.qml`, which already has
