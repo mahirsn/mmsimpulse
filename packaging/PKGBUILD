@@ -1,0 +1,55 @@
+# Maintainer: mahirsn <mahirsuna72@gmail.com>
+pkgname=mmsimpulse-git
+pkgver=r19
+pkgrel=1
+pkgdesc="The illogical-impulse shell on KineticWE — floating windows, no plasmashell"
+arch=('any')
+url="https://github.com/mahirsn/mmsimpulse"
+license=('GPL-3.0-or-later')
+# The compositor is used as installed, never rebuilt. python-dbus and
+# python-gobject are the KWin bridge; the rest are what the shell scripts call.
+depends=('kineticwe' 'quickshell' 'python' 'python-dbus' 'python-gobject'
+         'rsync' 'git' 'jq' 'systemd')
+optdepends=(
+  'illogical-impulse-basic: the widget set this shell is built on'
+  'illogical-impulse-audio: audio widgets and OSDs'
+  'illogical-impulse-backlight: brightness control'
+  'illogical-impulse-fonts-themes: Material Symbols and the shell fonts'
+  'illogical-impulse-portal: file pickers and screen sharing'
+  'illogical-impulse-python: colour generation for the theming scripts'
+  'illogical-impulse-screencapture: region screenshot and recording'
+  'ydotool: cursor warping, which KWin exposes no D-Bus call for'
+)
+makedepends=('git')
+provides=('mmsimpulse')
+conflicts=('mmsimpulse')
+source=("$pkgname::git+$url.git")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$srcdir/$pkgname"
+  printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+package() {
+  cd "$srcdir/$pkgname"
+
+  # The per-user half — shell config, the bridge, the derived session script —
+  # cannot be built here: the session script is generated from the installed
+  # start-kineticwe, and the shell config is assembled in $HOME. The package
+  # ships the tooling and `mmsimpulse-install` does that part once.
+  install -d "$pkgdir/usr/share/mmsimpulse"
+  cp -a bin kwin-script overlay session shortcuts install.sh README.md TESTING.md \
+        "$pkgdir/usr/share/mmsimpulse/"
+
+  install -Dm755 /dev/stdin "$pkgdir/usr/bin/mmsimpulse-install" <<'WRAPPER'
+#!/bin/sh
+# Sets up mmsimpulse for the current user. Safe to re-run: it is also how you
+# pick up an updated base skin or a new release of this package.
+exec /usr/share/mmsimpulse/install.sh "$@"
+WRAPPER
+
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+  install -Dm644 TESTING.md "$pkgdir/usr/share/doc/$pkgname/TESTING.md"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
