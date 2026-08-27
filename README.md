@@ -97,9 +97,16 @@ is off, but worth knowing before using that plugin as a reference.
 ./install.sh
 ```
 
-Requires an already-installed `kineticwe` — the compositor is not rebuilt. Also
-needs the upstream skin at `~/.config/quickshell/end4-pC` (override with
-`MMSIMPULSE_BASE=…`), `python-dbus`, `python-gobject` and `rsync`.
+Requires an already-installed `kineticwe` — the compositor is not rebuilt.
+
+This repository is only the KWin-specific half; the widgets themselves are
+[pctrade/end4-pC](https://github.com/pctrade/end4-pC). If it is not already at
+`~/.config/quickshell/end4-pC` the installer offers to clone it, so nothing is
+vendored here and an existing copy is reused as-is. Point `MMSIMPULSE_BASE` at
+another location to use that instead, and `--yes` takes every prompt's default
+for unattended runs.
+
+Also needs `python-dbus`, `python-gobject`, `rsync` and `git`.
 
 The install copies the skin to `~/.config/quickshell/mmsimpulse`, lays the
 KWin-specific files over it, installs the bridge to `~/.local/bin`, derives the

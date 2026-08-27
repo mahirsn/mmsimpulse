@@ -6,19 +6,48 @@
 #
 #   ./install.sh            install / update
 #   ./install.sh --shell    only refresh the shell config (fast iteration)
+#   ./install.sh --yes      answer prompts with their default (for scripts)
 set -euo pipefail
 
 REPO="$(dirname "$(readlink -f "$0")")"
 CONFIG=mmsimpulse
+# This repository is the KWin-specific half; the widgets themselves are
+# pctrade/end4-pC. Point MMSIMPULSE_BASE at an existing copy to reuse it,
+# or let the installer fetch one.
 SHELL_SRC="${MMSIMPULSE_BASE:-$HOME/.config/quickshell/end4-pC}"
+BASE_REPO="${MMSIMPULSE_BASE_REPO:-https://github.com/pctrade/end4-pC.git}"
+ASSUME_YES=0
 SHELL_DIR="$HOME/.config/quickshell/$CONFIG"
 BIN="$HOME/.local/bin"
 SHIM="$HOME/.local/share/$CONFIG/bin"
 SHELL_CONFIG="$HOME/.config/$CONFIG"
 SESSION="/usr/share/wayland-sessions/$CONFIG.desktop"
 
+for arg in "$@"; do [[ "$arg" == "--yes" ]] && ASSUME_YES=1; done
+
 command -v kinetic-we >/dev/null || { echo "kinetic-we not found; install the kineticwe package first." >&2; exit 1; }
-[[ -d "$SHELL_SRC" ]] || { echo "Base shell not found at $SHELL_SRC (set MMSIMPULSE_BASE)." >&2; exit 1; }
+
+ask() {
+    # $1 question, $2 default (y/n). Non-interactive runs take the default.
+    local reply
+    if (( ASSUME_YES )) || [[ ! -t 0 ]]; then reply="$2"; else
+        read -rp "$1 [$([[ $2 == y ]] && echo 'Y/n' || echo 'y/N')] " reply
+        reply="${reply:-$2}"
+    fi
+    [[ "${reply,,}" == y* ]]
+}
+
+if [[ ! -d "$SHELL_SRC" ]]; then
+    echo "The base skin (pctrade/end4-pC) is not at $SHELL_SRC."
+    if ask "Clone it there now?" y; then
+        command -v git >/dev/null || { echo "git is needed to clone it." >&2; exit 1; }
+        git clone --depth 1 "$BASE_REPO" "$SHELL_SRC"
+    else
+        echo "Nothing to build on. Install it yourself and re-run, or set" >&2
+        echo "MMSIMPULSE_BASE to an existing copy." >&2
+        exit 1
+    fi
+fi
 
 # --- shell config ----------------------------------------------------------
 # The upstream skin is copied wholesale and the KWin-specific files are laid
