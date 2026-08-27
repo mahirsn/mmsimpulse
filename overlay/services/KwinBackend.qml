@@ -61,7 +61,7 @@ Scope {
 
     // Everything that acts on a single window goes through the bridge.
     // org.kde.KWin.WindowsRunner would look like the obvious route, but it
-    // belongs to the krunner-integration plugin, which a plain KineticWE
+    // belongs to the krunner-integration plugin, which a plain KWin
     // session does not load — calls to it fail with "No such interface".
     function windowAction(id, action, value) {
         actionProc.command = ["busctl", "--user", "call",

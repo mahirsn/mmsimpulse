@@ -1,14 +1,14 @@
 #!/bin/bash
 # Install mmsimpulse's shell shortcuts into KDE's global shortcut system.
 #
-# KineticWE embeds kglobalacceld, whose KServiceActionComponent launches a
-# .desktop entry when its shortcut fires.  So each shell action becomes a
+# kglobalacceld's KServiceActionComponent launches a .desktop entry when its
+# shortcut fires.  So each shell action becomes a
 # hidden .desktop that runs `qs -c mmsimpulse ipc call <name> trigger`, and the
 # default key lives in X-KDE-Shortcuts.  kglobalacceld only notices entries
 # that ksycoca indexes, hence the kbuildsycoca6 run at the end.
 #
 # Nothing here edits ~/.config/kglobalshortcutsrc.  That file is shared with
-# the daily KineticWE+Noctalia session and rewriting it would change bindings
+# another session on this machine and rewriting it would change bindings
 # there; the shortcuts show up in System Settings > Shortcuts anyway, and
 # rebinding one from there is what writes to it.
 #

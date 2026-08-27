@@ -2,8 +2,8 @@
 # mmsimpulse installer.
 #
 # Sets up a Wayland session made of a KWin compositor and this shell — no
-# desktop environment, no plasmashell. Any KWin 6 works: the stock `kwin`
-# package, or a fork such as KineticWE which provides the same binary.
+# desktop environment, no plasmashell. Any KWin 6 works, as long as it
+# provides kwin_wayland.
 #
 # Everything it writes is under $HOME, except the login-manager session entry.
 #
@@ -29,8 +29,7 @@ SESSION="/usr/share/wayland-sessions/$CONFIG.desktop"
 for arg in "$@"; do [[ "$arg" == "--yes" ]] && ASSUME_YES=1; done
 
 command -v kwin_wayland >/dev/null || {
-    echo "kwin_wayland not found. Install the kwin package, or a fork that" >&2
-    echo "provides it such as kineticwe." >&2
+    echo "kwin_wayland not found. Install the kwin package." >&2
     exit 1
 }
 

@@ -6,8 +6,8 @@
 # session manager, no Plasma workspace. Everything a Plasma session would
 # normally provide and the shell actually needs is started explicitly below.
 #
-# Works with any KWin 6: the stock `kwin` package, or a fork such as KineticWE
-# which provides the same binary. Nothing below is specific to either.
+# Works with any KWin 6 that provides kwin_wayland. Nothing below assumes a
+# particular build of it.
 #
 # Deliberately not `set -e`: the supervisor loop at the end has to survive the
 # shell exiting non-zero, which is exactly when it needs to restart it.
@@ -77,7 +77,7 @@ if [[ -z "$layout" || ! -d "/usr/share/kwin/tabbox/$layout" ]]; then
     done
 fi
 
-# KineticWE embeds kglobalacceld and claims org.kde.kglobalaccel at startup; a
+# Some compositors embed kglobalacceld and claim org.kde.kglobalaccel; a
 # standalone daemon left over from a Plasma session makes that registration
 # fail and takes every shortcut down with it.
 systemctl --user stop plasma-kglobalaccel.service 2>/dev/null

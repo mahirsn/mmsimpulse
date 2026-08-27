@@ -12,7 +12,7 @@
 # "Window to Desktop N" does not — so those ten go through the bridge.
 #
 # Bindings live in ~/.config/kglobalshortcutsrc, which is shared with the daily
-# KineticWE session. `--uninstall` puts back what was displaced.
+# session. `--uninstall` puts back what was displaced.
 set -euo pipefail
 
 CONFIG=mmsimpulse

@@ -2,7 +2,7 @@
 # Install and run mmsimpulse in a throwaway Arch VM, the way a stranger with only
 # KDE would: nothing from this machine's session leaks in.
 #
-#   test/vm.sh up          boot the VM (first run seeds it with cloud-init)
+#   test/vm.sh up [gui]    boot the VM; `gui` opens a window you can drive by hand
 #   test/vm.sh ssh <cmd>   run a command inside the VM
 #   test/vm.sh click X Y [btn]  click in the guest, through its virtio tablet
 #   test/vm.sh shot <name> screenshot the VM's framebuffer into test/shots/
@@ -26,6 +26,10 @@ ssh_vm() {
 case "${1:-}" in
 up)
     [[ -f "$VM/base.qcow2" ]] || { echo "base.qcow2 yok; once indir" >&2; exit 1; }
+    # `gui` puts the guest in a window on this desktop. Screenshots and the
+    # scripted input still go through QMP either way, so both work at once.
+    DISPLAY_MODE=none
+    [[ "${2:-}" == gui ]] && DISPLAY_MODE=gtk
     "$0" down >/dev/null 2>&1
 
     # cloud-init NoCloud over SMBIOS+HTTP: mtools here cannot write the VFAT long
@@ -70,7 +74,7 @@ EOF
         -smbios "type=1,serial=ds=nocloud;s=http://10.0.2.2:$HTTP_PORT/" \
         -device virtio-vga,xres=1920,yres=1080 \
         -device virtio-tablet-pci -device virtio-keyboard-pci \
-        -display none -qmp "unix:$VM/qmp.sock,server,nowait" \
+        -display "$DISPLAY_MODE" -qmp "unix:$VM/qmp.sock,server,nowait" \
         -serial "file:$VM/serial.log" \
         >"$VM/qemu.log" 2>&1 </dev/null &
     echo $! > "$VM/qemu.pid"

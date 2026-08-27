@@ -7,10 +7,9 @@ A Wayland session made of a **KWin** compositor and the
 No desktop environment: no plasmashell, no session manager. Everything the shell
 needs is started by `start-mmsimpulse`, which is about 150 lines.
 
-Any KWin 6 works — the stock `kwin` package, or a fork such as
-[KineticWE](https://gitlab.com/theblackdon/kineticwe), which provides the same
-binary. **Tiling is off**: mmsimpulse expects `[Tiling] Enabled=false` in
-`~/.config/kwinrc` and implements no swap, split or layout switching.
+Any KWin 6 that provides `kwin_wayland` works. **Tiling is off**: mmsimpulse
+expects `[Tiling] Enabled=false` in `~/.config/kwinrc` and implements no swap,
+split or layout switching.
 
 ## Install
 
