@@ -161,39 +161,6 @@ SPECIFIC = [
      "widgetMonitor: HyprlandData.monitors.find(m => m.id == root.monitor.id)",
      "widgetMonitor: HyprlandData.monitors.find(m => m.id == root.monitor.id) ?? root.monitor"),
 
-    # --- plugin widgets -----------------------------------------------------
-    # The bar already resolves a layout name to ./<Name>.qml, so a widget only
-    # needs a file. Let names listed in pluginWidgets resolve to plugins/<name>/
-    # instead, which keeps a plugin out of the skin's own modules: it is a
-    # directory you drop in and a name you add, and deleting the directory
-    # removes it. Not a plugin system — just the search path.
-    ("modules/ii/bar/BarContent.qml",
-     """    function getWidgetUrl(name) {
-        if (!name) return "";
-        let formattedName = name.charAt(0).toUpperCase() + name.slice(1);
-        return Qt.resolvedUrl("./" + formattedName + ".qml");
-    }""",
-     """    function getWidgetUrl(name) {
-        if (!name) return "";
-        let formattedName = name.charAt(0).toUpperCase() + name.slice(1);
-        if ((Config.options.bar.pluginWidgets ?? []).includes(name))
-            return Qt.resolvedUrl(`../../../plugins/${name}/${formattedName}.qml`);
-        return Qt.resolvedUrl("./" + formattedName + ".qml");
-    }"""),
-    ("modules/common/Config.qml",
-     """                property JsonObject layouts: JsonObject {
-                    property list<string> leftLayout: ["launcherButton", "workspaces", "activeWindow"]""",
-     """                // Names here resolve to plugins/<name>/ instead of the
-                // bar's own modules. Add the name to a layout as well.
-                property list<string> pluginWidgets: []
-                property JsonObject discordVoice: JsonObject {
-                    property bool showChannelName: true
-                    property bool hideWhenDisconnected: false
-                }
-
-                property JsonObject layouts: JsonObject {
-                    property list<string> leftLayout: ["launcherButton", "workspaces", "activeWindow"]"""),
-
     # --- overview grid size -------------------------------------------------
     # The grid is fixed at Config's rows x columns because Hyprland numbers
     # workspaces 1..N whether or not they exist. KWin has a real, usually
@@ -214,26 +181,6 @@ SPECIFIC = [
         ? Config.options.overview.rows
         : Math.max(1, Math.ceil(WM.workspaces.length / root.overviewColumns))
     readonly property int workspacesShown: root.overviewRows * root.overviewColumns"""),
-
-    # --- plugin widgets in the Settings picker -------------------------------
-    # The bar editor offers a fixed list, so a plugin widget could be resolved
-    # and rendered but never placed from the UI. Derive the extra entries from
-    # bar.pluginWidgets so any plugin shows up without another patch.
-    ("modules/ii/settings/pages/BarConfig.qml",
-     "    property var allWidgets: [",
-     "    readonly property var baseWidgets: ["),
-    ("modules/ii/settings/pages/BarConfig.qml",
-     """        { id: "launcherButton",     name: Translation.tr("Launcher Button"),     icon: "search" },
-    ]""",
-     """        { id: "launcherButton",     name: Translation.tr("Launcher Button"),     icon: "search" },
-    ]
-
-    property var allWidgets: page.baseWidgets.concat(
-        (Config.options.bar.pluginWidgets ?? []).map(id => ({
-            id: id,
-            name: id.charAt(0).toUpperCase() + id.slice(1),
-            icon: "extension"
-        })))"""),
 
     # --- taskbar ------------------------------------------------------------
     # Same ToplevelManager gap as the overview: the dock's list of running apps

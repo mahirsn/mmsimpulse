@@ -36,13 +36,6 @@ mkdir -p "$STAGE/scripts/kwin"
 cp "$REPO"/kwin-script/*.js "$STAGE/scripts/kwin/"
 python3 "$REPO/overlay/patch-shell.py" "$STAGE"
 
-# Plugin widgets live beside the skin rather than inside its modules. Carry
-# over anything already installed so a plugin the user added by hand is not
-# deleted by a reinstall.
-mkdir -p "$STAGE/plugins"
-[[ -d "$SHELL_DIR/plugins" ]] && cp -a "$SHELL_DIR/plugins/." "$STAGE/plugins/"
-cp -a "$REPO"/plugins/. "$STAGE/plugins/"
-chmod +x "$STAGE"/plugins/*/*.py 2>/dev/null || true
 rm -rf "$SHELL_DIR.old"
 [[ -d "$SHELL_DIR" ]] && mv "$SHELL_DIR" "$SHELL_DIR.old"
 mv "$STAGE" "$SHELL_DIR"

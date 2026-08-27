@@ -1,6 +1,0 @@
-# Quickshell's implicit module registration does not reach plugins/, so the
-# types are declared here and imported with `import "."` instead of a qs.*
-# module path. The singleton in particular needs a qmldir either way.
-singleton DiscordVoiceService 1.0 DiscordVoiceService.qml
-DiscordVoicePanel 1.0 DiscordVoicePanel.qml
-DiscordVoice 1.0 DiscordVoice.qml
