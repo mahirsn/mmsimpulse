@@ -182,6 +182,22 @@ SPECIFIC = [
         : Math.max(1, Math.ceil(WM.workspaces.length / root.overviewColumns))
     readonly property int workspacesShown: root.overviewRows * root.overviewColumns"""),
 
+    # --- dock context menu --------------------------------------------------
+    # Right-click only toggled the pin, with nothing on screen to say so. It
+    # now opens a menu carrying the desktop entry's own actions — the same
+    # ones the launcher lists — plus pin and close.
+    ("modules/ii/bar/DocktoPanel.qml",
+     "                        altAction:         () => { TaskbarApps.togglePin(slotItem.appId) }",
+     "                        altAction:         () => { slotMenu.open = !slotMenu.open }\n"
+     "\n"
+     "                        DockAppMenu {\n"
+     "                            id: slotMenu\n"
+     "                            anchorItem: slotItem\n"
+     "                            appId: slotItem.appId\n"
+     "                            desktopEntry: slotItem.deskEntry\n"
+     "                            toplevels: slotItem.appEntry?.toplevels ?? []\n"
+     "                        }"),
+
     # --- popup placement ----------------------------------------------------
     # Without a screen the PanelWindow lands on whichever one Quickshell picks
     # first, so hovering a widget on the second monitor opened its popup on the
@@ -241,9 +257,9 @@ SPECIFIC = [
     # object survives that trip where a closure is not worth betting on.
     ("modules/ii/bar/DocktoPanel.qml",
      "                        entry.toplevels[next].activate()",
-     """                        const target = entry.toplevels[next]
-                        if (WM.compositor === "hyprland") target.activate()
-                        else WM.focusWindow(target.address)"""),
+     """                            const target = entry.toplevels[next]
+                            if (WM.compositor === "hyprland") target.activate()
+                            else WM.focusWindow(target.address)"""),
     ("modules/ii/bar/DocktoPanel.qml",
      "                            activeSlot.modelData.toplevels[next].activate()",
      """                            const target = activeSlot.modelData.toplevels[next]

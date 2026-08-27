@@ -82,18 +82,13 @@ done
     exit 1
 }
 
-# Ask the compositor's own Xwayland which display it took, rather than diffing
-# /tmp/.X11-unix. A stale socket from a previous session makes that diff find
-# nothing, DISPLAY stays unset, and every X11 client dies at startup with
-# "GLFW: The DISPLAY environment variable is missing".
-for _ in $(seq 1 40); do
-    _xpid="$(pgrep -P "$KWIN_PID" -x Xwayland | head -1)"
-    if [[ -n "$_xpid" && -r "/proc/$_xpid/cmdline" ]]; then
-        _disp="$(tr '\0' '\n' < "/proc/$_xpid/cmdline" | grep -m1 '^:[0-9]')"
-        [[ -n "$_disp" ]] && { export DISPLAY="$_disp"; break; }
-    fi
-    sleep 0.25
-done
+# KWin creates the X socket immediately but only spawns Xwayland when a client
+# first connects. Nothing in this session is an X client, so at this point there
+# is no Xwayland to ask, and DISPLAY would stay unset for the whole session —
+# every X11 program then dies with "Unable to open a connection to X".
+# mmsimpulse-xdisplay connects to the socket, which is what makes the compositor
+# start Xwayland, and reads the display out of its argv.
+DISPLAY="$(mmsimpulse-xdisplay "$KWIN_PID")" && export DISPLAY
 [[ -n "${DISPLAY:-}" ]] || echo "Warning: no Xwayland display found; X11 clients will fail" >&2
 
 # ---------------------------------------------------------------------------
