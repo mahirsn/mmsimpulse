@@ -4,88 +4,71 @@
 KWin creates the X socket as soon as it starts but only spawns Xwayland when a
 client first connects, so at session start there is no Xwayland process to ask
 and DISPLAY would go unset for the whole session — X11 clients then fail with
-"Unable to open a connection to X". Connecting to the socket is what makes KWin
-spawn it, after which its argv names the display.
+"Unable to open a connection to X".
 
-Usage: mmsimpulse-xdisplay <compositor-pid>
+/tmp/.X<N>-lock names the pid that reserved display :N, and for KWin that is
+the compositor itself, so the answer needs no running Xwayland and no guessing.
+Reading the compositor's open fds would work too, but stock Arch ships
+kwin_wayland with cap_sys_nice, which makes /proc/<pid>/fd unreadable even to
+the user running it — the lock file is world-readable everywhere.
+
+Usage: mmsimpulse-xdisplay [compositor-pid]
 """
 
 import os
 import re
-import socket
-import subprocess
 import sys
 import time
 
 SOCKET_DIR = "/tmp/.X11-unix"
+LOCK = "/tmp/.X%s-lock"
 
 
-def compositor_sockets(pid):
-    """X sockets this compositor is listening on, found through its open fds."""
-    inodes = set()
+def displays(pid=None):
+    """Display numbers this compositor serves, lowest first."""
+    found = []
+    uid = os.getuid()
     try:
-        fds = os.listdir(f"/proc/{pid}/fd")
+        names = os.listdir(SOCKET_DIR)
     except OSError:
-        return []
-    for fd in fds:
+        return found
+    for name in names:
+        match = re.fullmatch(r"X(\d+)", name)
+        if not match:
+            continue
+        number = match.group(1)
         try:
-            match = re.fullmatch(r"socket:\[(\d+)\]", os.readlink(f"/proc/{pid}/fd/{fd}"))
+            owner = open(LOCK % number).read().strip()
+        except OSError:
+            owner = None
+        if pid is not None:
+            if owner == str(pid):
+                found.append(int(number))
+            continue
+        # No pid to match against: any socket of ours will do.
+        try:
+            if os.stat(os.path.join(SOCKET_DIR, name)).st_uid == uid:
+                found.append(int(number))
         except OSError:
             continue
-        if match:
-            inodes.add(match.group(1))
-
-    paths = []
-    with open("/proc/net/unix") as unix:
-        for line in unix:
-            parts = line.split()
-            if len(parts) >= 8 and parts[6] in inodes and parts[7].startswith(f"{SOCKET_DIR}/X"):
-                paths.append(parts[7])
-    return paths
-
-
-def xwayland_display(pid):
-    """The display in the compositor's Xwayland child's argv, if it has one."""
-    try:
-        children = subprocess.run(["pgrep", "-P", str(pid), "-x", "Xwayland"],
-                                  capture_output=True, text=True).stdout.split()
-    except OSError:
-        return None
-    for child in children:
-        try:
-            argv = open(f"/proc/{child}/cmdline", "rb").read().decode().split("\0")
-        except OSError:
-            continue
-        for arg in argv:
-            if re.fullmatch(r":\d+", arg):
-                return arg
-    return None
+    return sorted(found)
 
 
 def main():
-    if len(sys.argv) != 2:
-        print("usage: mmsimpulse-xdisplay <compositor-pid>", file=sys.stderr)
-        return 2
-    pid = sys.argv[1]
+    pid = sys.argv[1] if len(sys.argv) > 1 else None
 
+    # The session script calls this straight after launching the compositor,
+    # which may not have reserved a display yet.
     deadline = time.time() + 15
-    while time.time() < deadline:
-        display = xwayland_display(pid)
-        if display:
-            print(display)
+    while True:
+        found = displays(pid)
+        if found:
+            print(":%d" % found[0])
             return 0
-        # Nudge: a connection is what makes the compositor start Xwayland.
-        for path in compositor_sockets(pid):
-            probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            try:
-                probe.connect(path)
-            except OSError:
-                pass
-            finally:
-                probe.close()
+        if time.time() >= deadline:
+            break
         time.sleep(0.25)
-
-    print("no Xwayland display found", file=sys.stderr)
+    print("no X display found", file=sys.stderr)
     return 1
 
 

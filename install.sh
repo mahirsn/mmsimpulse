@@ -105,11 +105,14 @@ install -m755 "$REPO/session/start-$CONFIG" "$BIN/"
 # --- session entry ---------------------------------------------------------
 # SDDM only reads /usr/share/wayland-sessions, so this one file needs root.
 # Skip the sudo prompt when the entry is already in place and unchanged.
-if ! sed "s|@BIN@|$BIN|" "$REPO/session/$CONFIG.desktop" | cmp -s - "$SESSION" 2>/dev/null; then
+# The package ships the same entry pointing at /usr/bin, so accept either
+# rendering as current rather than sudo-overwriting a package-owned file.
+if sed "s|@BIN@|$BIN|" "$REPO/session/$CONFIG.desktop" | cmp -s - "$SESSION" 2>/dev/null \
+   || sed "s|@BIN@|/usr/bin|" "$REPO/session/$CONFIG.desktop" | cmp -s - "$SESSION" 2>/dev/null; then
+    echo "==> session entry already current"
+else
     echo "==> session entry -> $SESSION (sudo)"
     sed "s|@BIN@|$BIN|" "$REPO/session/$CONFIG.desktop" | sudo tee "$SESSION" >/dev/null
-else
-    echo "==> session entry already current"
 fi
 
 # --- portal backend --------------------------------------------------------

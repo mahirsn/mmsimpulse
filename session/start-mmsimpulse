@@ -69,7 +69,11 @@ export WAYLAND_DISPLAY="$CONFIG-$$"
 systemctl --user stop plasma-kglobalaccel.service 2>/dev/null
 pkill -x kglobalacceld 2>/dev/null
 
-kwin_wayland --xwayland --socket "$WAYLAND_DISPLAY" >"$HOME/.local/share/$CONFIG-compositor.log" 2>&1 &
+# `env -u`, because kwin_wayland picks its backend from the environment: with
+# WAYLAND_DISPLAY set it nests inside a parent compositor instead of taking
+# the DRM device, and a login session then renders to nothing at all.
+env -u WAYLAND_DISPLAY kwin_wayland --xwayland --socket "$WAYLAND_DISPLAY" \
+    >"$HOME/.local/share/$CONFIG-compositor.log" 2>&1 &
 KWIN_PID=$!
 trap 'kill "$KWIN_PID" 2>/dev/null' EXIT
 
@@ -86,8 +90,8 @@ done
 # first connects. Nothing in this session is an X client, so at this point there
 # is no Xwayland to ask, and DISPLAY would stay unset for the whole session —
 # every X11 program then dies with "Unable to open a connection to X".
-# mmsimpulse-xdisplay connects to the socket, which is what makes the compositor
-# start Xwayland, and reads the display out of its argv.
+# mmsimpulse-xdisplay reads the display straight out of the X lock file the
+# compositor wrote, so no Xwayland has to be running yet.
 DISPLAY="$(mmsimpulse-xdisplay "$KWIN_PID")" && export DISPLAY
 [[ -n "${DISPLAY:-}" ]] || echo "Warning: no Xwayland display found; X11 clients will fail" >&2
 
@@ -97,6 +101,24 @@ DISPLAY="$(mmsimpulse-xdisplay "$KWIN_PID")" && export DISPLAY
 # Publish the session environment so D-Bus and systemd activated services start
 # with WAYLAND_DISPLAY and DISPLAY set instead of crashing on launch.
 dbus-update-activation-environment --systemd --all 2>/dev/null
+
+# The shell draws a fixed row of workspaces, but a KWin that has never been
+# configured has exactly one virtual desktop, so on a fresh install every
+# workspace past the first leads nowhere and Meta+2..0 do nothing. Top the
+# count up to what the shell is drawing; KWin remembers them afterwards.
+VD=org.kde.KWin.VirtualDesktopManager
+for _ in $(seq 1 40); do
+    busctl --user status org.kde.KWin >/dev/null 2>&1 && break
+    sleep 0.25
+done
+want="$(jq -r '.bar.workspaces.shown // 10' "$HOME/.config/$CONFIG/config.json" 2>/dev/null)"
+[[ "$want" =~ ^[0-9]+$ ]] || want=10
+have="$(busctl --user get-property org.kde.KWin /VirtualDesktopManager "$VD" count 2>/dev/null | awk '{print $2}')"
+while [[ "${have:-}" =~ ^[0-9]+$ ]] && (( have < want )); do
+    busctl --user call org.kde.KWin /VirtualDesktopManager "$VD" createDesktop us "$have" "" \
+        >/dev/null 2>&1 || break
+    have=$((have + 1))
+done
 
 # Without a service cache, System Settings finds no KCMs and kglobalacceld
 # finds none of the shortcut entries.

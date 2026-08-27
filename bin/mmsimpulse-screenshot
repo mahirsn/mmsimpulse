@@ -6,12 +6,23 @@ produces nothing and every screenshot path downstream crops a file that was
 never written. KWin's own org.kde.KWin.ScreenShot2 does the same job: it writes
 raw pixels into a pipe and answers with their layout.
 
-Usage: mmsimpulse-screenshot <output-name> <file.png|->  ("-" writes to stdout)
+Stock KWin only lets a caller use ScreenShot2 if its executable has a desktop
+entry declaring X-KDE-DBUS-Restricted-Interfaces, which a Python script can
+never satisfy — its executable is the interpreter. Forks with the check relaxed
+answer directly; everywhere else this falls back to spectacle, which is
+declared, and crops its whole-workspace capture down to the wanted output.
+
+Usage: mmsimpulse-screenshot <output-name> <file.png|-> [X,Y,W,H]
+
+The optional geometry is the output's position and size in logical pixels; it
+is what the fallback crops to, and callers already know it. Without it a
+multi-monitor fallback returns the whole workspace.
 """
 
 import os
 import subprocess
 import sys
+import tempfile
 
 import dbus
 
@@ -28,11 +39,42 @@ FORMATS = {
 }
 
 
+def spectacle_capture(target, geometry):
+    """Whole workspace through spectacle, cropped to one output."""
+    with tempfile.TemporaryDirectory() as tmp:
+        shot = os.path.join(tmp, "workspace.png")
+        grab = subprocess.run(["spectacle", "-b", "-n", "-f", "-o", shot],
+                              capture_output=True)
+        if grab.returncode or not os.path.exists(shot):
+            sys.stderr.write(grab.stderr.decode()[:300] or "spectacle captured nothing\n")
+            return 1
+        out = "png:-" if target == "-" else "png:%s" % target
+        argv = ["magick", shot]
+        if geometry:
+            x, y, width, height = geometry
+            argv += ["-crop", "%dx%d+%d+%d" % (width, height, x, y), "+repage"]
+        argv.append(out)
+        crop = subprocess.run(argv, capture_output=(target != "-"))
+        if crop.returncode:
+            if crop.stderr:
+                sys.stderr.write(crop.stderr.decode()[:300])
+            return 1
+    return 0
+
+
 def main():
-    if len(sys.argv) != 3:
+    if len(sys.argv) not in (3, 4):
         print(__doc__.strip().splitlines()[-1], file=sys.stderr)
         return 2
     output_name, target = sys.argv[1], sys.argv[2]
+    geometry = None
+    if len(sys.argv) == 4:
+        try:
+            geometry = [int(round(float(n))) for n in sys.argv[3].split(",")]
+        except ValueError:
+            geometry = None
+        if geometry is not None and len(geometry) != 4:
+            geometry = None
 
     read_fd, write_fd = os.pipe()
     try:
@@ -40,11 +82,10 @@ def main():
         result = iface.CaptureScreen(
             output_name, {"include-cursor": False},
             dbus.types.UnixFd(write_fd))
-    except dbus.DBusException as exc:
+    except dbus.DBusException:
         os.close(read_fd)
         os.close(write_fd)
-        print(f"capture failed: {exc}", file=sys.stderr)
-        return 1
+        return spectacle_capture(target, geometry)
     # The compositor holds its own copy now; ours has to go or the read blocks
     # forever waiting for an end that never comes.
     os.close(write_fd)

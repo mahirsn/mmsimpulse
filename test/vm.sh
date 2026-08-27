@@ -4,6 +4,7 @@
 #
 #   test/vm.sh up          boot the VM (first run seeds it with cloud-init)
 #   test/vm.sh ssh <cmd>   run a command inside the VM
+#   test/vm.sh click X Y [btn]  click in the guest, through its virtio tablet
 #   test/vm.sh shot <name> screenshot the VM's framebuffer into test/shots/
 #   test/vm.sh serial      tail the guest serial console
 #   test/vm.sh down        stop the VM
@@ -85,6 +86,17 @@ EOF
 
 ssh)
     shift; ssh_vm "$@"
+    ;;
+
+type|key)
+    # test/vm.sh type <text> | test/vm.sh key <qcode>...
+    what="$1"; shift
+    python3 "$REPO/test/qmp.py" "$VM/qmp.sock" "$what" "$@"
+    ;;
+
+click|move)
+    # test/vm.sh click <x> <y> [left|right]   coordinates in guest pixels
+    python3 "$REPO/test/qmp.py" "$VM/qmp.sock" "$1" "$2" "$3" 1920 1080 "${4:-left}"
     ;;
 
 shot)

@@ -139,6 +139,35 @@ Confirm these are *missing*, not broken:
 - [ ] Drag a window around for several seconds; no lag and no flood in `~/.local/share/mmsimpulse.log`
 - [ ] Leave the session running for an hour, then re-check the workspace indicator
 
+## Known broken
+
+**Right-clicking a system tray icon opens no menu.** Verified in a clean Arch VM
+against stock KWin 6.7.4 and Quickshell 0.3.1, with a purpose-built tray item
+serving a valid three-entry DBusMenu (`test/fake-tray.py`).
+
+What was measured, so nobody has to repeat it:
+
+- Left-click reaches the item and calls `activate()`; the tray item receives it.
+- Right-click reaches the same MouseArea (`event.button == 2`), `item.hasMenu`
+  is true and `menu.open()` runs.
+- The `QsMenuOpener` has all three DBusMenu entries, `trayItemId` is set, and
+  every row reports a sensible size (93x36 for the pin row, 66-105x36 for the
+  entries).
+- The `SysTrayMenu` window ends up `visible`, 133x181, anchored to the bar's
+  layer surface, on the right screen, with a fully opaque background.
+- KWin never receives a popup surface for it. A minimal `PopupWindow` with the
+  identical anchor, opened from the same handler, maps and paints immediately —
+  so the anchor and the layer-shell parent are not the problem.
+
+Ruled out: the tooltip occupying the layer surface (disabling it changes
+nothing), opening one frame too early (`Qt.callLater` changes nothing), and the
+menu being empty (its rows are all present and sized).
+
+One real defect was found and fixed along the way: the `ColumnLayout` holding
+the rows reported no implicit size, which left the window at 28x37 — the size
+of its own padding. `overlay/patch-shell.py` now measures the rows instead.
+That is necessary but not sufficient, and the menu is still not usable.
+
 ## Reporting
 
 For anything that fails, `~/.local/share/mmsimpulse.log` has both the shell's

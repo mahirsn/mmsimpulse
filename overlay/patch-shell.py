@@ -211,12 +211,15 @@ SPECIFIC = [
     # grim speaks wlr-screencopy, which KWin does not implement, so every
     # screenshot path silently produced nothing: the region selector cropped a
     # file that was never written, and neither copied nor saved anything.
-    # org.kde.KWin.ScreenShot2 does the same job per named output.
+    # org.kde.KWin.ScreenShot2 does the same job per named output. The
+    # geometry goes along because stock KWin refuses that call to anything
+    # without a declared desktop entry, and the spectacle fallback then has
+    # to crop the whole workspace down to this screen.
     ("modules/common/utils/TempScreenshotProcess.qml",
      """    command: ["bash", "-c", `mkdir -p '${StringUtils.shellSingleQuoteEscape(screenshotDir)}' && grim -o '${StringUtils.shellSingleQuoteEscape(screen.name)}' '${StringUtils.shellSingleQuoteEscape(screenshotPath)}'`]""",
      """    readonly property string captureCommand: WM.compositor === "hyprland"
         ? `grim -o '${StringUtils.shellSingleQuoteEscape(screen.name)}' '${StringUtils.shellSingleQuoteEscape(screenshotPath)}'`
-        : `mmsimpulse-screenshot '${StringUtils.shellSingleQuoteEscape(screen.name)}' '${StringUtils.shellSingleQuoteEscape(screenshotPath)}'`
+        : `mmsimpulse-screenshot '${StringUtils.shellSingleQuoteEscape(screen.name)}' '${StringUtils.shellSingleQuoteEscape(screenshotPath)}' ${screen.x},${screen.y},${screen.width},${screen.height}`
     command: ["bash", "-c", `mkdir -p '${StringUtils.shellSingleQuoteEscape(screenshotDir)}' && ${captureCommand}`]"""),
 
     # The quick paths bypass the shell's own selector and shell out to
@@ -234,7 +237,48 @@ SPECIFIC = [
                     : `spectacle -r -b -n -c && notify-send "Screenshot Copied" "Copied to clipboard" -a "Screen Snip" -i "image-x-generic"`;"""),
     ("services/Brightness.qml",
      """+ ` && grim -o '${StringUtils.shellSingleQuoteEscape(screenScope.screenName)}' -`""",
-     """+ ` && ${WM.compositor === "hyprland" ? "grim -o" : "mmsimpulse-screenshot"} '${StringUtils.shellSingleQuoteEscape(screenScope.screenName)}' -`"""),
+     """+ ` && ${WM.compositor === "hyprland" ? "grim -o" : "mmsimpulse-screenshot"} '${StringUtils.shellSingleQuoteEscape(screenScope.screenName)}' -`
+                    + `${WM.compositor === "hyprland" ? "" : ` ${screenScope.modelData.x},${screenScope.modelData.y},${screenScope.modelData.width},${screenScope.modelData.height}`}`"""),
+
+    # The tray menu's rows know their own size, but the ColumnLayout holding
+    # them reports none, so the popup stays 28x37 — the size of its own padding
+    # — and the menu is an empty stub. Measuring the rows gives it a real size.
+    # (This is necessary but not sufficient: see TESTING.md, the popup surface
+    # still never reaches KWin.)
+    ("modules/ii/bar/SysTrayMenu.qml",
+     """    component SubMenu: ColumnLayout {
+        id: submenu
+        required property QsMenuHandle handle
+        property bool isSubMenu: false
+        property bool shown: false
+        opacity: shown ? 1 : 0""",
+     """    component SubMenu: ColumnLayout {
+        id: submenu
+        required property QsMenuHandle handle
+        property bool isSubMenu: false
+        property bool shown: false
+        opacity: shown ? 1 : 0
+
+        implicitWidth: {
+            menuEntriesRepeater.count;
+            let w = 0;
+            for (let i = 0; i < submenu.children.length; i++) {
+                const child = submenu.children[i];
+                if (child.visible)
+                    w = Math.max(w, child.implicitWidth);
+            }
+            return w;
+        }
+        implicitHeight: {
+            menuEntriesRepeater.count;
+            let h = 0;
+            for (let i = 0; i < submenu.children.length; i++) {
+                const child = submenu.children[i];
+                if (child.visible)
+                    h += child.implicitHeight;
+            }
+            return h;
+        }"""),
 
     # --- taskbar ------------------------------------------------------------
     # Same ToplevelManager gap as the overview: the dock's list of running apps
