@@ -1,11 +1,21 @@
 # mmsimpulse
 
-The [end-4 illogical-impulse](https://github.com/end-4/dots-hyprland) shell — via the
-[pctrade/end4-pC](https://github.com/pctrade/end4-pC) skin — running on
-**KineticWE** instead of Hyprland, with **no plasmashell**.
+A Wayland session made of a **KWin** compositor and the
+[end-4 illogical-impulse](https://github.com/end-4/dots-hyprland) shell — via the
+[pctrade/end4-pC](https://github.com/pctrade/end4-pC) skin — and **nothing else**.
 
-**Tiling is off.** mmsimpulse assumes KineticWE runs with `[Tiling] Enabled=false`
-in `~/.config/kwinrc`: plain floating window management. Nothing here implements
+No desktop environment: no plasmashell, no session manager, no Plasma workspace.
+Everything a Plasma session would normally provide and the shell actually needs
+is started explicitly by `start-mmsimpulse`, which is about 150 lines.
+
+Any KWin 6 works — the stock `kwin` package, or a fork such as
+[KineticWE](https://gitlab.com/theblackdon/kineticwe), which provides the same
+binary. The backend talks to stock KWin D-Bus and the stock scripting API, so
+nothing here is tied to a particular fork.
+
+**Tiling is off.** mmsimpulse expects `[Tiling] Enabled=false` in
+`~/.config/kwinrc` — stock KWin has nothing to switch off, and on a fork with
+native tiling this turns it off: plain floating window management. Nothing here implements
 window swap, split, resize-by-direction or layout switching, and none of that is
 planned — the upstream shell's compositor abstraction (`services/WM.qml`) has no
 such calls in its contract to begin with, so the tiling-specific half of the
@@ -51,38 +61,15 @@ virtual-desktop state read off `org.kde.KWin`, and prints one JSON snapshot per
 line for `KwinBackend.qml` — the same shape `NiriBackend.qml` gets from
 `niri msg event-stream`.
 
-## KineticWE-specific parts
+## Running on a fork with native tiling
 
-Everything else in this repo is generic KWin 6 and would work on stock Plasma.
-These are the pieces that exist because of KineticWE in particular:
+Everything in this repo is generic KWin 6. Two things are worth knowing if the
+compositor is KineticWE rather than stock KWin:
 
-| Part | Why it is KineticWE-specific |
+| | |
 |---|---|
-| `session/mmsimpulse.desktop`, the generated `start-mmsimpulse` | Derived from `/usr/bin/start-kineticwe`, which is KineticWE's own session script. The only edits are the shell command and `PATH`. |
-| Replacing `noctalia` as the shell | KineticWE hardcodes Noctalia as its shell in step 8 of that script, and registers ~21 `noctalia msg …` shortcuts from inside the compositor (`src/noctaliasettings.cpp`). Those stay registered and simply do nothing here. |
-| Relying on kglobalaccel without a daemon | KineticWE links `libKGlobalAccelD` into the compositor and masks `plasma-kglobalaccel.service`. On stock Plasma the standalone daemon provides the same interface, so the shortcut mechanism is portable, but the handover in `start-kineticwe` is not. |
-| The Arch packaging assumption | The `kineticwe` AUR package installs into `/usr`, not `/opt` as the Gentoo ebuilds do, and it *provides* `/usr/bin/kwin_wayland`. `install.sh` looks for `kinetic-we` on `PATH`. |
-| `[Tiling] Enabled=false` | KineticWE's native tiling; upstream KWin has nothing to switch off. |
-
-## Verified D-Bus surface
-
-Introspected from a live KineticWE 6.7.80 instance with tiling disabled, not
-taken from docs:
-
-```
-org.kde.KWin            /KWin /VirtualDesktopManager /WindowsRunner /Scripting
-                        /Effects /Compositor /Plugins /Session /Layouts
-                        /ColorPicker /ScreenSaver /VirtualKeyboard
-org.kde.kglobalaccel    /kglobalaccel /component/<name>   (owned by the compositor)
-org.kde.KWin.NightLight        replaces hyprsunset
-org.kde.KWin.ScreenShot2       region capture
-org.kde.KWin.Effect.WindowView1  the built-in overview effect
-org.kde.KWin.HighlightWindow
-```
-
-The live `/component/` list includes `org_kde_konsole_desktop` and friends —
-`KServiceActionComponent` instances, i.e. the same `.desktop`-launcher
-mechanism the shortcuts here rely on, already working in this build.
+| It hardcodes Noctalia as its shell | Its session script starts `noctalia`, and it registers about 21 `noctalia msg …` shortcuts from inside the compositor (`src/noctaliasettings.cpp`). mmsimpulse brings its own session script, so the former does not apply; the latter stay registered and reach this shell through the `noctalia` shim on the session's PATH. |
+| It embeds kglobalacceld | The compositor claims `org.kde.kglobalaccel` itself. `start-mmsimpulse` only starts a daemon when nothing already owns that name, so the same script covers stock KWin, which has none. |
 
 Tiling itself is untouched: KineticWE 6.7.80 exposes no `org.kde.KWin.Tiling`
 D-Bus interface (`/Tiling` returns `UnknownObject`) — layouts live in `kwinrc [Tiling]` and as kglobalaccel actions
@@ -93,9 +80,23 @@ is off, but worth knowing before using that plugin as a reference.
 
 ## Install
 
+From the AUR:
+
 ```sh
+yay -S mmsimpulse-git   # or: paru -S mmsimpulse-git
+mmsimpulse-install      # the per-user half; safe to re-run
+```
+
+Or from a checkout:
+
+```sh
+git clone https://github.com/mahirsn/mmsimpulse && cd mmsimpulse
 ./install.sh
 ```
+
+The package owns the session entry and `start-mmsimpulse`, so installing it
+needs no sudo prompt. `install.sh` from a checkout writes the same two files
+and does ask for sudo once, for the login-manager entry.
 
 Requires an already-installed `kineticwe` — the compositor is not rebuilt.
 
