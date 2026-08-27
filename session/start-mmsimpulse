@@ -63,6 +63,20 @@ fi
 # session left a socket behind and the new one reuses that name.
 export WAYLAND_DISPLAY="$CONFIG-$$"
 
+# KWin's default task switcher layout is org.kde.breeze.desktop, which kwin
+# itself does not ship and which is often not installed at all. A TabBox whose
+# layout is missing draws nothing, so Alt+Tab looks broken rather than absent.
+# Point it at one that exists, before the compositor reads its config.
+layout="$(kreadconfig6 --file kwinrc --group TabBox --key LayoutName 2>/dev/null)"
+if [[ -z "$layout" || ! -d "/usr/share/kwin/tabbox/$layout" ]]; then
+    for candidate in /usr/share/kwin/tabbox/*/metadata.json; do
+        [[ -e "$candidate" ]] || break
+        kwriteconfig6 --file kwinrc --group TabBox --key LayoutName \
+            "$(basename "$(dirname "$candidate")")" 2>/dev/null
+        break
+    done
+fi
+
 # KineticWE embeds kglobalacceld and claims org.kde.kglobalaccel at startup; a
 # standalone daemon left over from a Plasma session makes that registration
 # fail and takes every shortcut down with it.

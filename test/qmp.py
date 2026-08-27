@@ -47,6 +47,11 @@ def main():
             send(f, {"execute": "send-key",
                      "arguments": {"keys": [{"type": "qcode", "data": qcode}]}})
             time.sleep(0.05)
+    elif command in ("keydown", "keyup"):
+        # Held modifiers: send-key always releases, which is no use for Alt+Tab.
+        send(f, {"execute": "input-send-event", "arguments": {"events": [
+            {"type": "key", "data": {"down": command == "keydown",
+                                     "key": {"type": "qcode", "data": args[0]}}}]}})
     elif command == "key":
         send(f, {"execute": "send-key",
                  "arguments": {"keys": [{"type": "qcode", "data": name}

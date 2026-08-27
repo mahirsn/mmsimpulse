@@ -39,6 +39,13 @@ fi
 mkdir -p "$APPDIR"
 conflicts=()
 
+key_taken() {
+    # A key is taken when it is some action's *live* binding — the first field.
+    # A suggested default in the second field is only an offer, not a claim.
+    [[ -f "$SHORTCUTSRC" ]] || return 1
+    grep -qE "^[^=]+=$1(\\t|,)" "$SHORTCUTSRC"
+}
+
 # Read whole lines and cut the columns: `IFS=$'\t' read` folds consecutive
 # tabs, which silently shifts the description into the key column on any row
 # that has no suggested key.
@@ -71,20 +78,39 @@ DESKTOP
     # Register the action unbound: the third field is the friendly name, the
     # second the default the Shortcuts KCM offers, the first the live key.
     # Anything already in the file is a binding the user chose, so leave it.
+    #
+    # The launcher is the one exception. A session with no way to open the
+    # launcher has no way to start anything, so it gets Meta+Space — but only
+    # if nothing else holds that key.
     entry="$CONFIG-$name.desktop"
-    if [[ -z "$(kreadconfig6 --file kglobalshortcutsrc --group services --group "$entry" --key _launch 2>/dev/null)" ]]; then
-        kwriteconfig6 --file kglobalshortcutsrc --group services --group "$entry" \
-            --key _k_friendly_name "mmsimpulse: $desc"
-        kwriteconfig6 --file kglobalshortcutsrc --group services --group "$entry" \
-            --key _launch "none,${keys:-none},mmsimpulse: $desc"
+    current="$(kreadconfig6 --file kglobalshortcutsrc --group services --group "$entry" \
+        --key _launch 2>/dev/null)"
+    # The live binding is the first comma-separated field. kglobalacceld writes
+    # an unbound action as an empty field, not as "none", so both count as
+    # "nothing here yet" — otherwise re-running would never bind the launcher.
+    bound="${current%%,*}"
+    if [[ -n "$current" && -n "$bound" && "$bound" != none ]]; then
+        continue
     fi
+    live=none
+    if [[ "$name" == searchToggle ]] && ! key_taken "Meta+Space"; then
+        live="Meta+Space"
+    fi
+    kwriteconfig6 --file kglobalshortcutsrc --group services --group "$entry" \
+        --key _k_friendly_name "mmsimpulse: $desc"
+    # kglobalaccel reads this value as one key sequence, not as the
+    # active,default,friendly triple the [kwin] group uses: writing
+    # "Meta+Shift+1,Meta+Shift+1,..." registers a two-chord sequence that a single
+    # press can never match. The key on its own is what works.
+    kwriteconfig6 --file kglobalshortcutsrc --group services --group "$entry" \
+        --key _launch "$live"
 done < "$TSV"
 
 kbuildsycoca6 --noincremental >/dev/null 2>&1 || true
 echo "Installed $(ls "$APPDIR"/$CONFIG-*.desktop | wc -l) shortcut entries in $APPDIR"
 
-echo "Nothing is bound by default. Assign keys in System Settings > Shortcuts,"
-echo "search for \"mmsimpulse\"."
+echo "Only the launcher is bound by default (Meta+Space). Assign the rest in"
+echo "System Settings > Shortcuts, search for \"mmsimpulse\"."
 
 if (( ${#conflicts[@]} )); then
     printf '\nThese suggested defaults are already taken elsewhere, so pick something\nelse for them:\n'

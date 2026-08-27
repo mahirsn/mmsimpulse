@@ -66,9 +66,12 @@ DESKTOP
     kwriteconfig6 --file kglobalshortcutsrc --group services \
         --group "$CONFIG-workspace$n.desktop" --key _k_friendly_name \
         "mmsimpulse: Send window to workspace $n and follow"
+    # kglobalaccel reads this value as one key sequence, not as the
+    # active,default,friendly triple the [kwin] group uses: writing
+    # "Meta+Shift+1,Meta+Shift+1,..." registers a two-chord sequence that a single
+    # press can never match. The key on its own is what works.
     kwriteconfig6 --file kglobalshortcutsrc --group services \
-        --group "$CONFIG-workspace$n.desktop" --key _launch \
-        "Meta+Shift+$key,Meta+Shift+$key,mmsimpulse: Send window to workspace $n and follow"
+        --group "$CONFIG-workspace$n.desktop" --key _launch "Meta+Shift+$key"
 done
 
 # Meta+1..9 belonged to plasmashell's task manager entries, which nothing in

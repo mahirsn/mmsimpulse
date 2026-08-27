@@ -88,7 +88,7 @@ ssh)
     shift; ssh_vm "$@"
     ;;
 
-type|key)
+type|key|keydown|keyup)
     # test/vm.sh type <text> | test/vm.sh key <qcode>...
     what="$1"; shift
     python3 "$REPO/test/qmp.py" "$VM/qmp.sock" "$what" "$@"

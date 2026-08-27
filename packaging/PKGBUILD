@@ -22,6 +22,7 @@ optdepends=(
   'kineticwe: KWin fork with native tiling, which mmsimpulse runs with tiling off'
   'powerdevil: idle timeouts, DPMS, suspend and brightness'
   'upower: battery status'
+  'kdeplasma-addons: task switcher layouts, without which Alt+Tab draws nothing'
   'kitty: the terminal the launcher and widgets open by default'
   'cliphist: clipboard history'
   'matugen: colours generated from the wallpaper'
