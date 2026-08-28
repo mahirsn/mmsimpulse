@@ -224,6 +224,37 @@ SPECIFIC = [
      """+ ` && ${WM.compositor === "hyprland" ? "grim -o" : "mmsimpulse-screenshot"} '${StringUtils.shellSingleQuoteEscape(screenScope.screenName)}' -`
                     + `${WM.compositor === "hyprland" ? "" : ` ${screenScope.modelData.x},${screenScope.modelData.y},${screenScope.modelData.width},${screenScope.modelData.height}`}`"""),
 
+    # --- region selector ----------------------------------------------------
+    # The region snapping helper shells out to hyprctl and to a python venv the
+    # illogical-impulse packages provide. Neither is here: the script fails, its
+    # output is empty, and JSON.parse throws on every snip. Snapping is a
+    # convenience — the selector works freehand without it — so ask for window
+    # regions only where hyprctl exists, and treat unusable output as "nothing
+    # to snap to" instead of an exception.
+    ("modules/ii/regionSelector/RegionSelection.qml",
+     """            + `--hyprctl ` """,
+     """            + (WM.compositor === "hyprland" ? `--hyprctl ` : ``) """),
+    ("modules/ii/regionSelector/RegionSelection.qml",
+     """            onStreamFinished: {
+                imageRegions = RegionFunctions.filterImageRegions(
+                    JSON.parse(imageDimensionCollector.text),
+                    root.windowRegions
+                );
+            }""",
+     """            onStreamFinished: {
+                const found = imageDimensionCollector.text.trim();
+                if (found.length === 0)
+                    return;
+                try {
+                    imageRegions = RegionFunctions.filterImageRegions(
+                        JSON.parse(found),
+                        root.windowRegions
+                    );
+                } catch (error) {
+                    console.log("[Region Selector] no snappable regions:", error);
+                }
+            }"""),
+
     # --- taskbar ------------------------------------------------------------
     # Same ToplevelManager gap as the overview: the dock's list of running apps
     # comes out empty on KWin. The dock only needs appId, activated and
