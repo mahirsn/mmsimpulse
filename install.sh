@@ -115,7 +115,13 @@ if sed "s|@BIN@|$BIN|" "$REPO/session/$CONFIG.desktop" | cmp -s - "$SESSION" 2>/
     echo "==> session entry already current"
 else
     echo "==> session entry -> $SESSION (sudo)"
-    sed "s|@BIN@|$BIN|" "$REPO/session/$CONFIG.desktop" | sudo tee "$SESSION" >/dev/null
+    # Not fatal. Without a terminal there is nowhere to type a password, and
+    # aborting here would skip the portal config and the shortcuts for the sake
+    # of one file the login manager may already have.
+    if ! sed "s|@BIN@|$BIN|" "$REPO/session/$CONFIG.desktop" | sudo tee "$SESSION" >/dev/null; then
+        echo "    could not write it; run this by hand:" >&2
+        echo "    sudo cp <(sed 's|@BIN@|$BIN|' $REPO/session/$CONFIG.desktop) $SESSION" >&2
+    fi
 fi
 
 # --- portal backend --------------------------------------------------------
