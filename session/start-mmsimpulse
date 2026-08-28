@@ -170,6 +170,17 @@ UPOWERD="$(find_bin upowerd)"
 POWERDEVIL="$(find_bin org_kde_powerdevil)"
 [[ -n "$POWERDEVIL" ]] && nohup "$POWERDEVIL" >>"$LOG" 2>&1 &
 
+# cliphist only ever contains what a watcher hands it, and in a session with no
+# desktop environment nothing else starts one: clipboard history stayed empty
+# and the shell logged a failure every time it refreshed. Text and images are
+# separate watches — one `wl-paste --watch` handles a single mime family.
+if command -v cliphist >/dev/null 2>&1 && command -v wl-paste >/dev/null 2>&1; then
+    pkill -f "wl-paste --type text --watch cliphist" 2>/dev/null
+    pkill -f "wl-paste --type image --watch cliphist" 2>/dev/null
+    wl-paste --type text --watch cliphist store >/dev/null 2>&1 &
+    wl-paste --type image --watch cliphist store >/dev/null 2>&1 &
+fi
+
 # ---------------------------------------------------------------------------
 # The shell, supervised
 # ---------------------------------------------------------------------------
