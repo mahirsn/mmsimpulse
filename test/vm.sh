@@ -98,9 +98,10 @@ type|key|keydown|keyup)
     python3 "$REPO/test/qmp.py" "$VM/qmp.sock" "$what" "$@"
     ;;
 
-click|move)
+click|move|drag)
     # test/vm.sh click <x> <y> [left|right]   coordinates in guest pixels
-    python3 "$REPO/test/qmp.py" "$VM/qmp.sock" "$1" "$2" "$3" "${4:-left}"
+    what="$1"; shift
+    python3 "$REPO/test/qmp.py" "$VM/qmp.sock" "$what" "$@"
     ;;
 
 shot)

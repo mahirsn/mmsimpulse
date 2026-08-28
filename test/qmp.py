@@ -51,6 +51,28 @@ def main():
             send(f, {"execute": "send-key",
                      "arguments": {"keys": [{"type": "qcode", "data": qcode}]}})
             time.sleep(0.05)
+    elif command == "drag":
+        # Press at the first point, move in steps so the client sees motion,
+        # release at the second. A snip selection is not expressible otherwise.
+        x1, y1, x2, y2 = (int(n) for n in args[:4])
+        width, height = framebuffer_size(f, sock_path)
+
+        def at(x, y):
+            return [{"type": "abs", "data": {"axis": "x", "value": x * 32767 // width}},
+                    {"type": "abs", "data": {"axis": "y", "value": y * 32767 // height}}]
+
+        send(f, {"execute": "input-send-event", "arguments": {"events": at(x1, y1)}})
+        time.sleep(0.2)
+        send(f, {"execute": "input-send-event", "arguments": {"events": [
+            {"type": "btn", "data": {"down": True, "button": "left"}}]}})
+        steps = 12
+        for i in range(1, steps + 1):
+            send(f, {"execute": "input-send-event", "arguments": {"events": at(
+                x1 + (x2 - x1) * i // steps, y1 + (y2 - y1) * i // steps)}})
+            time.sleep(0.05)
+        time.sleep(0.2)
+        send(f, {"execute": "input-send-event", "arguments": {"events": [
+            {"type": "btn", "data": {"down": False, "button": "left"}}]}})
     elif command in ("keydown", "keyup"):
         # Held modifiers: send-key always releases, which is no use for Alt+Tab.
         send(f, {"execute": "input-send-event", "arguments": {"events": [

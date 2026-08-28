@@ -177,6 +177,16 @@ POWERDEVIL="$(find_bin org_kde_powerdevil)"
 # ending the loop that exists to restart the shell.
 (
     while true; do
+        # Re-check DISPLAY on every start. Whatever the shell launches inherits
+        # its environment, so a session that came up before Xwayland had a
+        # display would hand every X11 program an empty DISPLAY for the rest of
+        # its life — Minecraft and anything else on GLFW just exit. Resolving it
+        # here means restarting the shell is enough to repair it.
+        if [[ -z "${DISPLAY:-}" ]]; then
+            DISPLAY="$(mmsimpulse-xdisplay "$KWIN_PID" 2>/dev/null)" || DISPLAY=""
+            [[ -n "$DISPLAY" ]] && export DISPLAY \
+                && dbus-update-activation-environment --systemd DISPLAY 2>/dev/null
+        fi
         qs -c "$CONFIG" >"$LOG" 2>&1 || true
         echo "$CONFIG exited, restarting in 2s..." >&2
         sleep 2
