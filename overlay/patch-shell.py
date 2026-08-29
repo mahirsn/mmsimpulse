@@ -255,6 +255,46 @@ SPECIFIC = [
                 }
             }"""),
 
+    # --- tray menu ----------------------------------------------------------
+    # The rows of a tray menu know their own size, but the ColumnLayout holding
+    # them reports none of it here, so the popup ends up 28x37 — the size of its
+    # own padding — and right-clicking a tray icon appears to do nothing.
+    # Measuring the rows gives the window a real size.
+    ("modules/ii/bar/SysTrayMenu.qml",
+     """    component SubMenu: ColumnLayout {
+        id: submenu
+        required property QsMenuHandle handle
+        property bool isSubMenu: false
+        property bool shown: false
+        opacity: shown ? 1 : 0""",
+     """    component SubMenu: ColumnLayout {
+        id: submenu
+        required property QsMenuHandle handle
+        property bool isSubMenu: false
+        property bool shown: false
+        opacity: shown ? 1 : 0
+
+        implicitWidth: {
+            menuEntriesRepeater.count;
+            let w = 0;
+            for (let i = 0; i < submenu.children.length; i++) {
+                const child = submenu.children[i];
+                if (child.visible)
+                    w = Math.max(w, child.implicitWidth);
+            }
+            return w;
+        }
+        implicitHeight: {
+            menuEntriesRepeater.count;
+            let h = 0;
+            for (let i = 0; i < submenu.children.length; i++) {
+                const child = submenu.children[i];
+                if (child.visible)
+                    h += child.implicitHeight;
+            }
+            return h;
+        }"""),
+
     # --- taskbar ------------------------------------------------------------
     # Same ToplevelManager gap as the overview: the dock's list of running apps
     # comes out empty on KWin. The dock only needs appId, activated and
