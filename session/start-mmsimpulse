@@ -83,6 +83,19 @@ fi
 systemctl --user stop plasma-kglobalaccel.service 2>/dev/null
 pkill -x kglobalacceld 2>/dev/null
 
+# The display manager forks this script before logind has finished registering
+# the login session, so a compositor started right away is left outside
+# session-N.scope. logind then answers GetSessionByPID for kwin_wayland with
+# "no such session", KWin falls back to a session backend that has no seat and
+# therefore no terminal control, and Ctrl+Alt+F<n> silently stops switching
+# terminals for the rest of the login. Everything else still works, which is
+# what makes it hard to spot. Wait for the scope before starting anything.
+for _ in $(seq 1 50); do
+    busctl --system call org.freedesktop.login1 /org/freedesktop/login1 \
+        org.freedesktop.login1.Manager GetSessionByPID u $$ >/dev/null 2>&1 && break
+    sleep 0.1
+done
+
 # `env -u`, because kwin_wayland picks its backend from the environment: with
 # WAYLAND_DISPLAY set it nests inside a parent compositor instead of taking
 # the DRM device, and a login session then renders to nothing at all.
