@@ -64,7 +64,8 @@ def spectacle_capture(target, geometry):
 
 def main():
     if len(sys.argv) not in (3, 4):
-        print(__doc__.strip().splitlines()[-1], file=sys.stderr)
+        print(next(l for l in __doc__.splitlines() if l.startswith("Usage:")),
+              file=sys.stderr)
         return 2
     output_name, target = sys.argv[1], sys.argv[2]
     geometry = None

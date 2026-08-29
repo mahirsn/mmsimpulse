@@ -357,7 +357,7 @@ SPECIFIC = [
      '            Quickshell.execDetached(["niri", "msg", "action", "quit"]);\n'
      '        } else if (WM.compositor === "kde") {\n'
      '            Quickshell.execDetached(["bash", "-c",\n'
-     '                \'loginctl terminate-session "${XDG_SESSION_ID:-}" || pkill -x kinetic-we\']);\n'
+     '                \'loginctl terminate-session "${XDG_SESSION_ID:-}" || pkill -x kwin_wayland\']);\n'
      '        } else {\n'
      '            Quickshell.execDetached(["pkill", "-i", "Hyprland"]);\n'
      '        }'),

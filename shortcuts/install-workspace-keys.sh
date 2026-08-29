@@ -30,8 +30,18 @@ if [[ "${1:-}" == "--uninstall" ]]; then
             --group "$CONFIG-workspace$n.desktop" --key _launch --delete 2>/dev/null || true
     done
     rm -fv "$APPDIR"/$CONFIG-workspace*.desktop
-    # Restore what these keys displaced.
-    kw plasmashell "activate task manager entry 1" "Meta+1,Meta+1,Activate Task Manager Entry 1"
+    # Restore what these keys displaced. Deleting the entries rather than
+    # writing a key back is what restores them: the install path overwrote both
+    # the binding and the default column with "none", so leaving a value behind
+    # would leave System Settings > Reset to Defaults with nothing to reset to.
+    for n in 1 2 3 4 5 6 7 8 9 0; do
+        kwriteconfig6 --file kglobalshortcutsrc --group plasmashell \
+            --key "activate task manager entry $n" --delete 2>/dev/null || true
+    done
+    for swap in "Swap Tiled Window Left" "Swap Tiled Window Right"; do
+        kwriteconfig6 --file kglobalshortcutsrc --group kwin \
+            --key "$swap" --delete 2>/dev/null || true
+    done
     kw kwin "Window One Desktop to the Left" "Meta+Ctrl+Shift+Left,Meta+Ctrl+Shift+Left,Window One Desktop to the Left"
     kw kwin "Window One Desktop to the Right" "Meta+Ctrl+Shift+Right,Meta+Ctrl+Shift+Right,Window One Desktop to the Right"
     kbuildsycoca6 --noincremental >/dev/null 2>&1 || true

@@ -16,6 +16,10 @@ set -uo pipefail
 CONFIG=mmsimpulse
 LOG="$HOME/.local/share/$CONFIG.log"
 mkdir -p "$(dirname "$LOG")"
+# Everything that writes here appends, so that a crash-looping shell cannot
+# erase the trace of why it crashed. Emptying it once per session is what
+# keeps it from growing forever.
+: >"$LOG"
 
 # ---------------------------------------------------------------------------
 # Session identity
@@ -211,7 +215,7 @@ fi
             [[ -n "$DISPLAY" ]] && export DISPLAY \
                 && dbus-update-activation-environment --systemd DISPLAY 2>/dev/null
         fi
-        qs -c "$CONFIG" >"$LOG" 2>&1 || true
+        qs -c "$CONFIG" >>"$LOG" 2>&1 || true
         echo "$CONFIG exited, restarting in 2s..." >&2
         sleep 2
     done

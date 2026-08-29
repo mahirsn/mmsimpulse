@@ -91,4 +91,3 @@ workspace.windowAdded.connect(w => { track(w); push(); });
 workspace.windowRemoved.connect(push);
 workspace.windowActivated.connect(push);
 workspace.currentDesktopChanged.connect(push);
-push();

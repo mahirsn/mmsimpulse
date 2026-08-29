@@ -30,7 +30,7 @@ case "${1:-}:${2:-}" in
     window-switcher:*)             ipc overviewWorkspacesToggle ;;
     wallpaper-random:*)            ipc wallpaperSelectorRandom ;;
     session:lock)                  ipc lock ;;
-    session:logout)                exec bash -c 'loginctl terminate-session "${XDG_SESSION_ID:-}" || pkill -x kinetic-we' ;;
+    session:logout)                exec bash -c 'loginctl terminate-session "${XDG_SESSION_ID:-}" || pkill -x kwin_wayland' ;;
     session:suspend)               exec bash -c 'systemctl suspend || loginctl suspend' ;;
     session:reboot)                exec bash -c 'systemctl reboot || loginctl reboot' ;;
     session:shutdown)              exec bash -c 'systemctl poweroff || loginctl poweroff' ;;

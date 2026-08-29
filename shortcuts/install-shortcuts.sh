@@ -42,8 +42,11 @@ conflicts=()
 key_taken() {
     # A key is taken when it is some action's *live* binding — the first field.
     # A suggested default in the second field is only an offer, not a claim.
+    # Compared as a whole field rather than matched as a pattern: a key name
+    # is full of regex metacharacters, and "Meta+Space" as an ERE matches
+    # "MetaaSpace" but never itself.
     [[ -f "$SHORTCUTSRC" ]] || return 1
-    grep -qE "^[^=]+=$1(\\t|,)" "$SHORTCUTSRC"
+    cut -d= -f2- "$SHORTCUTSRC" | cut -d, -f1 | grep -qxF "$1"
 }
 
 # Read whole lines and cut the columns: `IFS=$'\t' read` folds consecutive
