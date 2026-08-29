@@ -120,28 +120,13 @@ call behind.
 
 ```sh
 python3 test_bridge.py      # snapshot merging, id normalisation, desktop mapping
-
-test/vm.sh up               # a clean Arch VM, installed the way a stranger would
-test/vm.sh ssh <command>
-test/vm.sh click 900 20     # real input, through the guest's virtio tablet
-test/vm.sh shot launcher
-test/vm.sh down
-
-test/nested.sh up           # faster, but shares this session's logind and bus
-test/nested.sh ipc searchToggle
-test/nested.sh down
 ```
 
-The VM is what proves the project's central claim, because it starts from the
-same blank state a stranger does: no KWin fork, no leftovers, nothing from this
-machine's `~/.config`. `up gui` puts it in a window you can drive by hand, and
-`up dual` gives it two outputs. Input and screenshots go through QMP, so a
-scripted test presses real keys and clicks real buttons.
-
-The nested harness is for quick iteration on shell behaviour only. It gets its
-own config directory, because KWin persists virtual desktops on exit and a test
-run must not write those back, and it shares the host's logind session — so the
-host locking locks it too, and logout from it would end the real session.
+The harnesses this was developed against — a clean Arch VM driven over QMP, and
+a nested session for quick iteration — are not part of the repository. What
+matters for anyone reading this is that the VM is what the claims here were
+checked against: a machine with no KWin fork, no leftovers and nothing from a
+developer's `~/.config`.
 
 `TESTING.md` is the per-component checklist for a live session.
 
@@ -157,5 +142,4 @@ overlay/patch-shell.py          scripted edits to the rest of the skin
 session/                        session script and login-manager entry
 shortcuts/                      shortcut tables and installers
 packaging/                      PKGBUILD
-test/                           VM and nested harnesses, QMP client, fake tray
 ```

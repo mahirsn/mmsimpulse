@@ -8,7 +8,7 @@ Keep a terminal open — almost everything is fixable with
 
 ## Already verified in a nested session
 
-These were exercised with `test/nested.sh` against a real KineticWE instance, so
+These were exercised against a real session, so
 they should not need re-checking unless something looks wrong:
 
 | | |
@@ -143,7 +143,7 @@ Confirm these are *missing*, not broken:
 
 **Right-clicking a system tray icon opens no menu.** Verified in a clean Arch VM
 against stock KWin 6.7.4 and Quickshell 0.3.1, with a purpose-built tray item
-serving a valid three-entry DBusMenu (`test/fake-tray.py`).
+serving a valid three-entry DBusMenu.
 
 What was measured, so nobody has to repeat it:
 
