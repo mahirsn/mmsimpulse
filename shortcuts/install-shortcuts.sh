@@ -38,6 +38,7 @@ fi
 
 mkdir -p "$APPDIR"
 conflicts=()
+written=()
 
 key_taken() {
     # A key is taken when it is some action's *live* binding — the first field.
@@ -107,9 +108,31 @@ DESKTOP
     # press can never match. The key on its own is what works.
     kwriteconfig6 --file kglobalshortcutsrc --group services --group "$entry" \
         --key _launch "$live"
+    written+=("$entry"$'\t'"$desc"$'\t'"$live")
 done < "$TSV"
 
 kbuildsycoca6 --noincremental >/dev/null 2>&1 || true
+
+# kglobalshortcutsrc is only read when the daemon starts. KWin 6.5 embeds
+# kglobalacceld, so installing from inside a running session hands the new
+# .desktop files to a daemon that is already up: it registers each one with the
+# key in X-KDE-Shortcuts as the *live* binding and never looks at the _launch
+# values written above. That is the opposite of what this script decided —
+# every suggested default ends up bound, and the launcher key is not. D-Bus is
+# the only thing the daemon listens to while it runs, so say it again there.
+if busctl --user status org.kde.kglobalaccel >/dev/null 2>&1; then
+    for row in "${written[@]}"; do
+        IFS=$'\t' read -r entry desc live <<< "$row"
+        # An empty key list is what unbinds one. Meta+Space is the single key
+        # this script binds, so its Qt keycode is spelled out rather than
+        # parsed: Qt::MetaModifier (0x10000000) | Qt::Key_Space (0x20).
+        keys=0
+        [[ "$live" == "Meta+Space" ]] && keys="1 268435488"
+        busctl --user call org.kde.kglobalaccel /kglobalaccel org.kde.KGlobalAccel \
+            setForeignShortcut asai 4 "$entry" _launch "mmsimpulse: $desc" \
+            "mmsimpulse: $desc" $keys >/dev/null 2>&1 || true
+    done
+fi
 echo "Installed $(ls "$APPDIR"/$CONFIG-*.desktop | wc -l) shortcut entries in $APPDIR"
 
 echo "Only the launcher is bound by default (Meta+Space). Assign the rest in"
