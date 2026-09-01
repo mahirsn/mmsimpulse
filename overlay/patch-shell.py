@@ -325,6 +325,45 @@ SPECIFIC = [
                             if (WM.compositor === "hyprland") target.activate()
                             else WM.focusWindow(target.address)"""),
 
+    # --- wallpaper picker ----------------------------------------------------
+    # A tab of its own rather than a page in the wallpaper selector: the
+    # selector only knows how to set a still image, and every animated source
+    # here needs a player started and stopped instead.
+    ("modules/ii/sidebarLeft/SidebarLeftContent.qml",
+     """        ...((root.animeEnabled && !root.animeCloset) ? [{"icon": "bookmark_heart", "name": Translation.tr("Anime")}] : [])
+    ]""",
+     """        ...((root.animeEnabled && !root.animeCloset) ? [{"icon": "bookmark_heart", "name": Translation.tr("Anime")}] : []),
+        {"icon": "wallpaper", "name": Translation.tr("Wallpapers")}
+    ]"""),
+
+    # The placeholder page goes with it. It stood in for an empty sidebar, and
+    # with a tab that is always present there is no empty sidebar left — while
+    # leaving it would put a page in front of the wallpaper one and hand every
+    # tab after it the wrong page.
+    ("modules/ii/sidebarLeft/SidebarLeftContent.qml",
+     """                    ...((root.tabButtonList.length === 0 || (!root.aiChatEnabled && !root.translatorEnabled && root.animeCloset)) ? [placeholder.createObject()] : []),
+                    ...(root.animeEnabled ? [anime.createObject()] : []),
+                ]""",
+     """                    ...(root.animeEnabled ? [anime.createObject()] : []),
+                    wallpapers.createObject(),
+                ]"""),
+
+    ("modules/ii/sidebarLeft/SidebarLeftContent.qml",
+     """        Component {
+            id: placeholder
+            Item {
+                StyledText {
+                    anchors.centerIn: parent
+                    text: root.animeCloset ? Translation.tr("Nothing") : Translation.tr("Enjoy your empty sidebar...")
+                    color: Appearance.colors.colSubtext
+                }
+            }
+        }""",
+     """        Component {
+            id: wallpapers
+            WallpaperPicker {}
+        }"""),
+
     # --- launcher actions ---------------------------------------------------
     ("services/LauncherSearch.qml",
      'Hyprland.dispatch("global quickshell:wallpaperSelectorToggle")',

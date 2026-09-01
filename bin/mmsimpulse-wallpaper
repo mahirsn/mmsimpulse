@@ -1,0 +1,214 @@
+#!/bin/bash
+# Animated wallpaper for the KWin session: mpvpaper for video files, and
+# linux-wallpaperengine for Wallpaper Engine's packed scenes.
+#
+# The shell already knows about video wallpapers: Background.qml paints its own
+# window transparent whenever background.wallpaperPath ends in a video
+# extension, and falls back to background.thumbnailPath for the preview and the
+# colour theme. So nothing here hides or disables end4's wallpaper — pointing
+# the config at a video is what opens the hole for the player underneath. A
+# scene has no video file to point at, so it borrows the same trick with a
+# scene.mp4 that never exists: only the extension is ever read.
+#
+#   mmsimpulse-wallpaper <file>       an image, a video, or a gif
+#   mmsimpulse-wallpaper <id|title>   a Wallpaper Engine wallpaper, video or scene
+#   mmsimpulse-wallpaper list         the workshop wallpapers with their type
+#   mmsimpulse-wallpaper index        every source as JSON, for the sidebar
+#   mmsimpulse-wallpaper restore      replay the last one, for session startup
+#   mmsimpulse-wallpaper              toggle — stop if playing, else replay
+#   mmsimpulse-wallpaper off          stop, and put the still image back
+set -euo pipefail
+
+CFG="$HOME/.config/mmsimpulse/config.json"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/videowall"
+CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/videowall"
+WE="$HOME/.local/share/Steam/steamapps/workshop/content/431960"
+WALLDIR="${MMSIMPULSE_WALLPAPERS:-$HOME/Pictures/Wallpaper}"
+ASSETS="$HOME/.local/share/Steam/steamapps/common/wallpaper_engine/assets"
+SWITCHWALL="$HOME/.config/quickshell/mmsimpulse/scripts/colors/switchwall.sh"
+OPTS="no-audio loop hwdec=auto scale=bilinear video-sync=display-resample panscan=1.0"
+# The shell's colour pipeline runs matugen and materialyoucolor out of a venv
+# and finds it through this variable. The session exports it since r46, but a
+# session started before that update still has to be told.
+export ILLOGICAL_IMPULSE_VIRTUAL_ENV="${ILLOGICAL_IMPULSE_VIRTUAL_ENV:-$HOME/.local/state/quickshell/.venv}"
+
+# --noswitch with an explicit image is switchwall's colours-only mode: it leaves
+# the wallpaper paths alone and only regenerates the theme. It ends by starting
+# a KDE theming daemon that never returns, hence the background job.
+recolor() { [[ -x "$SWITCHWALL" ]] && "$SWITCHWALL" --noswitch --image "$1" >/dev/null 2>&1 & }
+
+set_config() {  # $1 wallpaperPath, $2 thumbnailPath
+    jq --arg w "$1" --arg t "$2" \
+        '.background.wallpaperPath = $w | .background.thumbnailPath = $t' \
+        "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
+}
+
+# A Wallpaper Engine item is a directory named by its workshop id, holding a
+# project.json that names the type and, for the video ones, the file to play.
+we_dir() {
+    local q="${1,,}" d t
+    [[ -d "$WE/$1" ]] && { printf '%s' "$WE/$1"; return 0; }
+    for d in "$WE"/*/; do
+        t="$(jq -r '.title // ""' "$d/project.json" 2>/dev/null)"
+        [[ "${t,,}" == *"$q"* ]] && { printf '%s' "${d%/}"; return 0; }
+    done
+    return 1
+}
+
+we_list() {
+    local d id
+    for d in "$WE"/*/; do
+        id="$(basename "$d")"
+        jq -r --arg id "$id" '"\($id)\t\(.type // "?" | ascii_downcase)\t\(.title // "")"' \
+            "$d/project.json" 2>/dev/null
+    done | sort -t$'\t' -k2,2 -k3,3
+}
+
+# comm is truncated to 15 characters, so the renderer never matches its own
+# name; mpvpaper is short enough to match as it is.
+playing() { pgrep -x mpvpaper >/dev/null || pgrep -x linux-wallpaper >/dev/null; }
+
+stop() {
+    pkill -x mpvpaper 2>/dev/null || true
+    pkill -x linux-wallpaper 2>/dev/null || true
+    if [[ -s "$STATE.prev" ]]; then
+        set_config "$(cat "$STATE.prev")" ""
+        recolor "$(cat "$STATE.prev")"
+    fi
+    rm -f "$STATE.prev"
+}
+
+# Every connected output. mpvpaper resolves "*" itself; the scene renderer wants
+# one --screen-root per screen, and mpvpaper's own listing is the shortest way
+# to ask — which is what keeps all of this off hyprctl, the one thing tying the
+# shell's built-in video path to Hyprland.
+outputs() { mpvpaper -d 2>&1 | sed -n 's/.*Output: \([^ ]*\).*/\1/p'; }
+
+is_video_file() { [[ "${1,,}" =~ \.(mp4|webm|mkv|avi|mov|gif)$ ]]; }
+
+# An image needs no player at all: switchwall.sh is the skin's own wallpaper
+# path, and letting it do the work is what keeps the still wallpapers, their
+# colours and their transition animation exactly as the shell expects them.
+set_image() {
+    stop
+    [[ -x "$SWITCHWALL" ]] && "$SWITCHWALL" --image "$1" >/dev/null 2>&1 &
+}
+
+start() {
+    local arg="$1" dir="" kind="" media="" preview="" thumb wallpath
+
+    if [[ -f "$arg" ]] && ! is_video_file "$arg"; then
+        set_image "$arg"
+        return
+    elif [[ -f "$arg" ]]; then
+        kind=video
+        media="$arg"
+    elif dir="$(we_dir "$arg")"; then
+        kind="$(jq -r '.type // "" | ascii_downcase' "$dir/project.json")"
+        case "$kind" in
+            video) media="$dir/$(jq -r '.file // ""' "$dir/project.json")" ;;
+            scene) media="$(basename "$dir")" ;;
+            *) echo "$(basename "$dir"): \"$kind\" türü desteklenmiyor" >&2; exit 1 ;;
+        esac
+        for preview in "$dir"/preview.{jpg,png,gif}; do [[ -f "$preview" ]] && break; done
+        [[ -f "$preview" ]] || preview=""
+    else
+        echo "bulunamadı: $arg" >&2
+        exit 1
+    fi
+
+    mkdir -p "$CACHE" "$(dirname "$STATE")"
+
+    # A gif never makes the shell transparent — its extension is not in the list
+    # Background.qml checks — so re-encode it once and use that instead.
+    if [[ "$kind" == video && "${media,,}" == *.gif ]]; then
+        local mp4="$CACHE/$(basename "$media").mp4"
+        [[ -f "$mp4" ]] || ffmpeg -y -i "$media" -movflags faststart -pix_fmt yuv420p \
+            -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" "$mp4" >/dev/null 2>&1
+        media="$mp4"
+    fi
+
+    # The still is what the shell shows in previews and generates colours from,
+    # so an animated preview has to be flattened like anything else.
+    if [[ -n "$preview" && "$preview" != *.gif ]]; then
+        thumb="$preview"
+    else
+        thumb="$CACHE/${arg//\//_}.jpg"
+        [[ -f "$thumb" ]] || ffmpeg -y -i "${preview:-$media}" -vframes 1 "$thumb" >/dev/null 2>&1
+    fi
+
+    # A scene has nothing to point the config at, so it gets a path that only
+    # has to end in .mp4 to open the hole. Nothing ever opens it.
+    [[ "$kind" == scene ]] && wallpath="$dir/scene.mp4" || wallpath="$media"
+
+    local prev
+    prev="$(jq -r '.background.wallpaperPath' "$CFG")"
+    # Only the first start records what to go back to. Switching from one
+    # animated wallpaper to the next must not overwrite it, or "off" would put
+    # back an intermediate video instead of the image the session started with.
+    [[ -e "$STATE.prev" || "$prev" == "$wallpath" || ! -f "$prev" ]] \
+        || printf '%s\n' "$prev" > "$STATE.prev"
+
+    pkill -x mpvpaper 2>/dev/null || true
+    pkill -x linux-wallpaper 2>/dev/null || true
+    printf '%s\n' "$arg" > "$STATE"
+    set_config "$wallpath" "$thumb"
+
+    if [[ "$kind" == scene ]]; then
+        local args=() out
+        for out in $(outputs); do args+=(--screen-root "$out" --bg "$media"); done
+        [[ -d "$ASSETS" ]] && args+=(--assets-dir "$ASSETS")
+        # --fps 30 rather than the panel's refresh rate: a scene is a full 3D
+        # render and this is a laptop. KWin publishes no fullscreen protocol the
+        # renderer understands, so it never pauses on its own.
+        setsid linux-wallpaperengine --silent --fps 30 "${args[@]}" >/dev/null 2>&1 &
+    else
+        # -p -a MAX pauses the decoder while a maximized or fullscreen window
+        # covers the wallpaper, which on a laptop panel is the difference
+        # between a loop that costs battery all day and one that costs nothing
+        # unseen.
+        mpvpaper -f -p -a MAX -o "$OPTS" '*' "$media"
+    fi
+    recolor "$thumb"
+}
+
+# One listing for the sidebar: the workshop, then the images and the videos in
+# the wallpaper folder. Video stills are generated on the way past, so the grid
+# has something to draw for them.
+index() {
+    local d id f
+    for d in "$WE"/*/; do
+        [[ -f "$d/project.json" ]] || continue
+        id="$(basename "$d")"
+        for f in "${d%/}"/preview.{jpg,png,gif}; do [[ -f "$f" ]] && break; done
+        jq -c -n --arg id "$id" --arg preview "${f:-}" --slurpfile p "$d/project.json" \
+            '{source: "engine", arg: $id, title: ($p[0].title // $id),
+              type: ($p[0].type // "?" | ascii_downcase), preview: $preview}'
+    done
+    for f in "$WALLDIR"/*; do
+        [[ -f "$f" ]] || continue
+        if is_video_file "$f"; then
+            local thumb="$CACHE/$(basename "$f").jpg"
+            [[ -f "$thumb" ]] || { mkdir -p "$CACHE"; ffmpeg -y -i "$f" -vframes 1 "$thumb" >/dev/null 2>&1 || true; }
+            jq -c -n --arg a "$f" --arg t "$(basename "$f")" --arg p "$thumb" \
+                '{source: "video", arg: $a, title: $t, type: "video", preview: $p}'
+        elif [[ "${f,,}" =~ \.(jpg|jpeg|png|webp|bmp)$ ]]; then
+            jq -c -n --arg a "$f" --arg t "$(basename "$f")" \
+                '{source: "local", arg: $a, title: $t, type: "image", preview: $a}'
+        fi
+    done | sort
+}
+
+case "${1:-toggle}" in
+    off|stop) stop ;;
+    list) we_list ;;
+    index) index | jq -s '.' ;;
+    restore) [[ -s "$STATE" ]] && start "$(cat "$STATE")" || true ;;
+    toggle)
+        if playing; then stop
+        else
+            [[ -s "$STATE" ]] || { echo "kullanım: videowall <dosya|id|başlık>" >&2; exit 1; }
+            start "$(cat "$STATE")"
+        fi ;;
+    *) start "$1" ;;
+esac

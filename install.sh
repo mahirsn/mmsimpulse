@@ -72,6 +72,7 @@ cp "$REPO"/overlay/services/*.qml "$STAGE/services/"
 if compgen -G "$REPO/overlay/bar/*.qml" >/dev/null; then
     cp "$REPO"/overlay/bar/*.qml "$STAGE/modules/ii/bar/"
 fi
+cp "$REPO"/overlay/sidebarLeft/*.qml "$STAGE/modules/ii/sidebarLeft/"
 mkdir -p "$STAGE/scripts/kwin"
 cp "$REPO"/kwin-script/*.js "$STAGE/scripts/kwin/"
 python3 "$REPO/overlay/patch-shell.py" "$STAGE"
