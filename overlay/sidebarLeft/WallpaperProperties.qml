@@ -20,7 +20,17 @@ Rectangle {
     property var properties: []
     signal closed
 
-    color: Appearance.colors.colLayer1
+    // The layer colours carry the shell's translucency, which is right for a
+    // panel over the desktop and wrong for one over a grid of images: the
+    // wallpapers read straight through the text. Opaque, and swallowing clicks
+    // so a card underneath cannot be picked by accident.
+    color: Qt.rgba(Appearance.colors.colLayer1.r, Appearance.colors.colLayer1.g, Appearance.colors.colLayer1.b, 1)
+    z: 10
+
+    MouseArea {
+        anchors.fill: parent
+        hoverEnabled: true
+    }
 
     onWallpaperIdChanged: {
         root.properties = [];
@@ -41,6 +51,26 @@ Rectangle {
         if (parts.length < 3 || parts.some(isNaN))
             return Appearance.colors.colLayer2;
         return Qt.rgba(parts[0], parts[1], parts[2], 1);
+    }
+
+    // The scenes keep colours as three floats. That is unreadable in a text
+    // field and unwritable by hand, so it is shown and taken as hex.
+    function toHex(triple) {
+        const parts = String(triple).trim().split(/\s+/).map(parseFloat);
+        if (parts.length < 3 || parts.some(isNaN))
+            return String(triple);
+        const channel = value => Math.round(Math.min(1, Math.max(0, value)) * 255).toString(16).padStart(2, "0");
+        return `#${channel(parts[0])}${channel(parts[1])}${channel(parts[2])}`;
+    }
+
+    // Wallpaper Engine's own settings come through as the catalogue keys it
+    // translates on Windows, and nothing here has that catalogue.
+    function label(text) {
+        const prefix = "ui_browse_properties_";
+        if (!String(text).startsWith(prefix))
+            return text;
+        return String(text).slice(prefix.length).split("_")
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
     }
 
     function fromHex(text) {
@@ -103,6 +133,7 @@ Rectangle {
         }
 
         StyledListView {
+            id: list
             Layout.fillWidth: true
             Layout.fillHeight: true
             visible: root.properties.length > 0
@@ -117,7 +148,7 @@ Rectangle {
 
                 StyledText {
                     Layout.fillWidth: true
-                    text: modelData.text
+                    text: root.label(modelData.text)
                     elide: Text.ElideRight
                     font.pixelSize: Appearance.font.pixelSize.smaller
                 }
@@ -174,23 +205,32 @@ Rectangle {
                     }
 
                     MaterialTextField {
-                        implicitWidth: 110
-                        text: modelData.value
+                        implicitWidth: 100
+                        wrapMode: TextEdit.NoWrap
+                        text: root.toHex(modelData.value)
                         placeholderText: "#rrggbb"
                         onEditingFinished: {
-                            const triple = root.fromHex(text) || text;
-                            root.set(modelData.name, triple);
+                            const triple = root.fromHex(text);
+                            if (triple !== "")
+                                root.set(modelData.name, triple);
                         }
                     }
                 }
 
                 MaterialTextField {
                     visible: modelData.type === "textinput"
-                    implicitWidth: 150
+                    implicitWidth: 170
+                    wrapMode: TextEdit.NoWrap
                     text: modelData.value
                     onEditingFinished: root.set(modelData.name, text)
                 }
             }
+        }
+
+        // Without this the header floats in the middle of an empty column.
+        Item {
+            Layout.fillHeight: true
+            visible: !list.visible
         }
     }
 }
