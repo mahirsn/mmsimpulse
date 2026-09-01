@@ -36,6 +36,13 @@ export KDE_FULL_SESSION=true
 export XDG_MENU_PREFIX=plasma-
 export PATH="$HOME/.local/share/$CONFIG/bin:$HOME/.local/bin:$PATH"
 
+# The skin's colour pipeline runs matugen and materialyoucolor out of a venv and
+# finds it through this variable, which a Hyprland session exports and nothing
+# here did. Without it switchwall.sh sources "/bin/activate", every generator
+# dies on a missing module, and picking a wallpaper quietly changes no colours
+# at all. Left alone if the login manager already set it.
+export ILLOGICAL_IMPULSE_VIRTUAL_ENV="${ILLOGICAL_IMPULSE_VIRTUAL_ENV:-$HOME/.local/state/quickshell/.venv}"
+
 # A Hyprland session exports QT_QPA_PLATFORM="wayland;xcb" and the user systemd
 # manager outlives a logout, so the value leaks in here. Quickshell's IPC client
 # does not recognise the multi-value form, decides the caller is on X11, and
