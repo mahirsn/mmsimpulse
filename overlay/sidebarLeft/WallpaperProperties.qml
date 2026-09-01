@@ -34,10 +34,12 @@ Rectangle {
 
     onWallpaperIdChanged: {
         root.properties = [];
-        if (root.wallpaperId !== "") {
-            propsProc.running = false;
-            propsProc.running = true;
-        }
+        // exec() rather than toggling running: the command is only read when
+        // the process starts, and restarting it in the same tick the id
+        // changed could run the query for the wallpaper opened before this one
+        // — or for no wallpaper at all, which reads as "no settings".
+        if (root.wallpaperId !== "")
+            propsProc.exec(["mmsimpulse-wallpaper", "props", root.wallpaperId]);
     }
 
     function set(name, value) {
@@ -83,7 +85,6 @@ Rectangle {
 
     Process {
         id: propsProc
-        command: ["mmsimpulse-wallpaper", "props", root.wallpaperId]
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
