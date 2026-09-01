@@ -132,13 +132,19 @@ start() {
         media="$mp4"
     fi
 
-    # The still is what the shell shows in previews and generates colours from,
-    # so an animated preview has to be flattened like anything else.
-    if [[ -n "$preview" && "$preview" != *.gif ]]; then
-        thumb="$preview"
+    # The still is what the shell stretches over the whole screen while the
+    # player starts, and what the colours are generated from. A workshop
+    # preview is around 400px wide, which is the blurry image you see for a
+    # moment before the wallpaper appears — so a real frame is taken instead,
+    # and the preview only stands in until there is one.
+    local shot=""
+    if [[ "$kind" == scene ]]; then
+        shot="$CACHE/$media.png"
+        [[ -f "$shot" ]] && thumb="$shot" || thumb="${preview:-}"
     else
-        thumb="$CACHE/${arg//\//_}.jpg"
-        [[ -f "$thumb" ]] || ffmpeg -y -i "${preview:-$media}" -vframes 1 "$thumb" >/dev/null 2>&1
+        thumb="$CACHE/$(basename "$media").jpg"
+        [[ -f "$thumb" ]] || ffmpeg -y -i "$media" -vframes 1 "$thumb" >/dev/null 2>&1
+        [[ -s "$thumb" ]] || thumb="${preview:-}"
     fi
 
     # A scene has nothing to point the config at, so it gets a path that only
@@ -162,6 +168,16 @@ start() {
         local args=() out
         for out in $(outputs); do args+=(--screen-root "$out" --bg "$media"); done
         [[ -d "$ASSETS" ]] && args+=(--assets-dir "$ASSETS")
+        # The renderer can hand back one of its own frames, so the sharp still
+        # costs nothing extra: it is taken while the wallpaper comes up, and
+        # every later play of this scene starts from it.
+        if [[ ! -f "$shot" ]]; then
+            args+=(--screenshot "$shot" --screenshot-delay 30)
+            ( for _ in $(seq 1 40); do [[ -s "$shot" ]] && break; sleep 0.5; done
+              [[ -s "$shot" ]] || exit 0
+              set_config "$wallpath" "$shot"
+              recolor "$shot" ) >/dev/null 2>&1 &
+        fi
         # Not the panel's refresh rate: a scene is a full render every frame and
         # this is a laptop. KWin publishes no fullscreen protocol the renderer
         # understands either, so it never pauses itself the way mpvpaper does.
