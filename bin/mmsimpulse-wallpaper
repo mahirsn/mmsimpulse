@@ -34,6 +34,12 @@ OPTS="no-audio loop hwdec=auto scale=bilinear video-sync=display-resample pansca
 # 60 measured comfortable on a Radeon 610M at this panel's size; lower it on
 # weaker hardware, or when a scene is heavy enough to be heard in the fans.
 SCENE_FPS="${MMSIMPULSE_SCENE_FPS:-60}"
+# A scene renders at the compositor's buffer scale, which on a fractionally
+# scaled output is rounded up: a 2560x1600 panel at 1.25 is drawn at 4096x2560,
+# two and a half times the pixels it will be shown at. An integrated GPU sits
+# at 100% for that, and the stutter lands on everything else sharing it. Set
+# MMSIMPULSE_SCENE_GPU=nvidia to hand the render to a discrete card instead.
+SCENE_GPU="${MMSIMPULSE_SCENE_GPU:-}"
 # The shell's colour pipeline runs matugen and materialyoucolor out of a venv
 # and finds it through this variable. The session exports it since r46, but a
 # session started before that update still has to be told.
@@ -228,7 +234,13 @@ start() {
         # Not the panel's refresh rate: a scene is a full render every frame and
         # this is a laptop. KWin publishes no fullscreen protocol the renderer
         # understands either, so it never pauses itself the way mpvpaper does.
-        setsid linux-wallpaperengine --silent --fps "$SCENE_FPS" "${args[@]}" >/dev/null 2>&1 &
+        local offload=(env)
+        if [[ "$SCENE_GPU" == nvidia ]]; then
+            offload+=(__NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia
+                      __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/10_nvidia.json)
+        fi
+        setsid "${offload[@]}" linux-wallpaperengine --silent --fps "$SCENE_FPS" \
+            "${args[@]}" >/dev/null 2>&1 &
     else
         # -p -a MAX pauses the decoder while a maximized or fullscreen window
         # covers the wallpaper, which on a laptop panel is the difference
