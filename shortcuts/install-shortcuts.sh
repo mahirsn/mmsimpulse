@@ -89,6 +89,18 @@ DESKTOP
     entry="$CONFIG-$name.desktop"
     current="$(kreadconfig6 --file kglobalshortcutsrc --group services --group "$entry" \
         --key _launch 2>/dev/null)"
+    known="$(kreadconfig6 --file kglobalshortcutsrc --group services --group "$entry" \
+        --key _k_friendly_name 2>/dev/null)"
+    # A registered entry with no _launch line is not an unbound one. When the
+    # live key equals the default kglobalacceld read from X-KDE-Shortcuts, it
+    # drops the line as redundant — so an absent line means that default is in
+    # effect, and the action is bound. Writing "none" over it took the key away
+    # again on every re-install, which is invisible until you press it. The
+    # friendly name is what separates the two: an entry that was never
+    # registered has neither.
+    if [[ -n "$known" && -z "$current" ]]; then
+        continue
+    fi
     # The live binding is the first comma-separated field. kglobalacceld writes
     # an unbound action as an empty field, not as "none", so both count as
     # "nothing here yet" — otherwise re-running would never bind the launcher.
