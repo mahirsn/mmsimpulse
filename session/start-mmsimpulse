@@ -169,6 +169,15 @@ if ! busctl --user status org.kde.kglobalaccel >/dev/null 2>&1; then
     [[ -n "$KGA" ]] && nohup "$KGA" >>"$LOG" 2>&1 &
 fi
 
+# Wine programs — Wallpaper Engine among them — still put their tray icon in
+# the X11 XEmbed tray, which no Wayland bar can show: the bar speaks
+# StatusNotifierItem. Plasma bridges the two with this proxy, and with no
+# plasmashell here nothing starts it, so minimising such a program drops it off
+# the desktop entirely with no way to get it back.
+if command -v xembedsniproxy >/dev/null && ! pgrep -x xembedsniproxy >/dev/null; then
+    nohup xembedsniproxy >>"$LOG" 2>&1 &
+fi
+
 # Portals are D-Bus activated: asking for org.freedesktop.impl.portal.desktop.kde
 # starts plasma-xdg-desktop-portal-kde.service on demand. Starting one by hand
 # takes the bus name away from its unit, and then nothing restarts it when it

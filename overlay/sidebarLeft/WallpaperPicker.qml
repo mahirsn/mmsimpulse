@@ -18,6 +18,8 @@ Item {
     readonly property var sources: ["engine", "local", "video"]
     property int sourceIndex: 0
     property var entries: []
+    property string editingId: ""
+    property string editingTitle: ""
     readonly property var shown: root.entries.filter(entry => entry.source === root.sources[root.sourceIndex])
 
     function reload() {
@@ -171,6 +173,30 @@ Item {
                         }
                     }
 
+                    // A scene carries settings of its own; a video is a video.
+                    RippleButton {
+                        visible: modelData.type === "scene"
+                        anchors {
+                            top: parent.top
+                            left: parent.left
+                            margins: 4
+                        }
+                        implicitWidth: 26
+                        implicitHeight: 26
+                        buttonRadius: height / 2
+                        colBackground: Appearance.colors.colLayer1
+                        onClicked: {
+                            root.editingTitle = modelData.title;
+                            root.editingId = modelData.arg;
+                        }
+                        contentItem: MaterialSymbol {
+                            anchors.centerIn: parent
+                            text: "tune"
+                            iconSize: Appearance.font.pixelSize.normal
+                            color: Appearance.colors.colOnLayer1
+                        }
+                    }
+
                     // Only the workshop mixes types, and which one it is decides
                     // whether the scene renderer or mpvpaper has to come up.
                     Rectangle {
@@ -196,5 +222,13 @@ Item {
                 }
             }
         }
+    }
+
+    WallpaperProperties {
+        anchors.fill: parent
+        visible: root.editingId !== ""
+        wallpaperId: root.editingId
+        wallpaperTitle: root.editingTitle
+        onClosed: root.editingId = ""
     }
 }

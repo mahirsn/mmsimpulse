@@ -14,6 +14,8 @@
 #   mmsimpulse-wallpaper <id|title>   a Wallpaper Engine wallpaper, video or scene
 #   mmsimpulse-wallpaper list         the workshop wallpapers with their type
 #   mmsimpulse-wallpaper index        every source as JSON, for the sidebar
+#   mmsimpulse-wallpaper props <id>   a scene's own settings, as JSON
+#   mmsimpulse-wallpaper set <id> <name> <value>   change one of them
 #   mmsimpulse-wallpaper restore      replay the last one, for session startup
 #   mmsimpulse-wallpaper              toggle — stop if playing, else replay
 #   mmsimpulse-wallpaper off          stop, and put the still image back
@@ -26,6 +28,7 @@ WE="$HOME/.local/share/Steam/steamapps/workshop/content/431960"
 WALLDIR="${MMSIMPULSE_WALLPAPERS:-$HOME/Pictures/Wallpaper}"
 ASSETS="$HOME/.local/share/Steam/steamapps/common/wallpaper_engine/assets"
 SWITCHWALL="$HOME/.config/quickshell/mmsimpulse/scripts/colors/switchwall.sh"
+PROPS="$HOME/.config/mmsimpulse/wallpaper-properties.json"
 OPTS="no-audio loop hwdec=auto scale=bilinear video-sync=display-resample panscan=1.0"
 # A scene is a full render every frame, so this is the one knob worth having.
 # 60 measured comfortable on a Radeon 610M at this panel's size; lower it on
@@ -70,6 +73,46 @@ we_list() {
 
 # comm is truncated to 15 characters, so the renderer never matches its own
 # name; mpvpaper is short enough to match as it is.
+# A scene carries its own settings — colours, toggles, sliders, dropdowns — in
+# project.json, which is also where Wallpaper Engine reads them from. Anything
+# changed here is kept separately and folded in on the way out, so the workshop
+# copy stays exactly as it was downloaded and an update cannot lose the edits.
+props() {
+    local dir="$WE/$1" over='{}'
+    [[ -f "$dir/project.json" ]] || return 1
+    [[ -f "$PROPS" ]] && over="$(jq -c --arg id "$1" '.[$id] // {}' "$PROPS" 2>/dev/null || echo '{}')"
+    jq -c --argjson over "$over" '
+        [ (.general.properties // {}) | to_entries[]
+          | select(.value.type
+                   | . == "color" or . == "bool" or . == "slider"
+                     or . == "combo" or . == "textinput")
+          | {name: .key,
+             type: .value.type,
+             text: (.value.text // .key),
+             order: (.value.order // 0),
+             value: (if $over[.key] == null then .value.value else $over[.key] end),
+             min: (.value.min // 0),
+             max: (.value.max // 1),
+             step: (.value.step // 0.01),
+             options: (.value.options // [])}
+        ] | sort_by(.order)' "$dir/project.json"
+}
+
+# The renderer reads properties once, when it starts, so changing one means
+# starting it again. Only if this is the wallpaper on screen — editing the
+# settings of one you are not looking at should not switch to it.
+set_prop() {
+    mkdir -p "$(dirname "$PROPS")"
+    [[ -f "$PROPS" ]] || echo '{}' > "$PROPS"
+    jq --arg id "$1" --arg n "$2" --arg v "$3" '.[$id][$n] = $v' \
+        "$PROPS" > "$PROPS.tmp" && mv "$PROPS.tmp" "$PROPS"
+    if [[ -s "$STATE" ]]; then
+        local current
+        current="$(we_dir "$(cat "$STATE")" 2>/dev/null || true)"
+        [[ "$current" == "$WE/$1" ]] && start "$(cat "$STATE")"
+    fi
+}
+
 playing() { pgrep -x mpvpaper >/dev/null || pgrep -x linux-wallpaper >/dev/null; }
 
 stop() {
@@ -168,6 +211,10 @@ start() {
         local args=() out
         for out in $(outputs); do args+=(--screen-root "$out" --bg "$media"); done
         [[ -d "$ASSETS" ]] && args+=(--assets-dir "$ASSETS")
+        while IFS=$'\t' read -r name value; do
+            [[ -n "$name" ]] && args+=(--set-property "$name=$value")
+        done < <(jq -r --arg id "$media" '.[$id] // {} | to_entries[] | "\(.key)\t\(.value)"' \
+                    "$PROPS" 2>/dev/null || true)
         # The renderer can hand back one of its own frames, so the sharp still
         # costs nothing extra: it is taken while the wallpaper comes up, and
         # every later play of this scene starts from it.
@@ -223,6 +270,8 @@ case "${1:-toggle}" in
     off|stop) stop ;;
     list) we_list ;;
     index) index | jq -s '.' ;;
+    props) props "$2" ;;
+    set) set_prop "$2" "$3" "$4" ;;
     restore) [[ -s "$STATE" ]] && start "$(cat "$STATE")" || true ;;
     toggle)
         if playing; then stop
