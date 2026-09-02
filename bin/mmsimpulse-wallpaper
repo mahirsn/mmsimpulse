@@ -216,6 +216,7 @@ start() {
     pkill -x linux-wallpaper 2>/dev/null || true
     printf '%s\n' "$arg" > "$STATE"
     printf '%s\n' "$arg" > "$STATE.last"
+    printf '%s\n' "$wallpath" > "$STATE.path"
     set_config "$wallpath" "$thumb"
 
     if [[ "$kind" == scene ]]; then
@@ -302,7 +303,20 @@ case "${1:-toggle}" in
     # every few seconds and covers a crash and a monitor being plugged in too.
     supervise)
         while true; do
-            [[ -s "$STATE" ]] && ! playing && start "$(cat "$STATE")"
+            if [[ -s "$STATE" ]]; then
+                # The config is the authority on what the wallpaper is. Picking
+                # a still image from the shell's own selector writes it there
+                # and knows nothing about this file, so comparing the two is
+                # what stops the animated one from coming back over it.
+                if [[ "$(jq -r '.background.wallpaperPath' "$CFG" 2>/dev/null)" \
+                      != "$(cat "$STATE.path" 2>/dev/null)" ]]; then
+                    rm -f "$STATE"
+                    pkill -x mpvpaper 2>/dev/null || true
+                    pkill -x linux-wallpaper 2>/dev/null || true
+                elif ! playing; then
+                    start "$(cat "$STATE")"
+                fi
+            fi
             sleep 5
         done ;;
     *) start "$1" ;;
