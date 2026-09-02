@@ -239,10 +239,10 @@ fi
 SHELL_PID=$!
 
 # An animated wallpaper is a player process, not a setting, so nothing brings it
-# back on its own. Replaying it here — after the shell, so the config it reads
-# is already in place — is what makes it survive a logout. Silent when no
-# animated wallpaper was ever picked.
-mmsimpulse-wallpaper restore >/dev/null 2>&1 &
+# back on its own — not after a logout, and not after the compositor closes its
+# surface, which is what happens when an RDP connection adds an output. This
+# watches for both. Silent when no animated wallpaper was ever picked.
+mmsimpulse-wallpaper supervise >/dev/null 2>&1 &
 
 # The compositor exiting is what ends the session.
 wait "$KWIN_PID"

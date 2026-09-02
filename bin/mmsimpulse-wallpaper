@@ -16,7 +16,7 @@
 #   mmsimpulse-wallpaper index        every source as JSON, for the sidebar
 #   mmsimpulse-wallpaper props <id>   a scene's own settings, as JSON
 #   mmsimpulse-wallpaper set <id> <name> <value>   change one of them
-#   mmsimpulse-wallpaper restore      replay the last one, for session startup
+#   mmsimpulse-wallpaper supervise    keep the chosen one playing, for the session
 #   mmsimpulse-wallpaper              toggle — stop if playing, else replay
 #   mmsimpulse-wallpaper off          stop, and put the still image back
 set -euo pipefail
@@ -122,6 +122,10 @@ set_prop() {
 playing() { pgrep -x mpvpaper >/dev/null || pgrep -x linux-wallpaper >/dev/null; }
 
 stop() {
+    # Emptied rather than kept: this file is what should be on screen, and the
+    # supervisor would otherwise put the wallpaper straight back. What toggle
+    # replays lives in .last.
+    rm -f "$STATE"
     pkill -x mpvpaper 2>/dev/null || true
     pkill -x linux-wallpaper 2>/dev/null || true
     if [[ -s "$STATE.prev" ]]; then
@@ -211,6 +215,7 @@ start() {
     pkill -x mpvpaper 2>/dev/null || true
     pkill -x linux-wallpaper 2>/dev/null || true
     printf '%s\n' "$arg" > "$STATE"
+    printf '%s\n' "$arg" > "$STATE.last"
     set_config "$wallpath" "$thumb"
 
     if [[ "$kind" == scene ]]; then
@@ -284,12 +289,21 @@ case "${1:-toggle}" in
     index) index | jq -s '.' ;;
     props) props "$2" ;;
     set) set_prop "$2" "$3" "$4" ;;
-    restore) [[ -s "$STATE" ]] && start "$(cat "$STATE")" || true ;;
     toggle)
         if playing; then stop
         else
-            [[ -s "$STATE" ]] || { echo "kullanım: videowall <dosya|id|başlık>" >&2; exit 1; }
-            start "$(cat "$STATE")"
+            [[ -s "$STATE.last" ]] || { echo "usage: mmsimpulse-wallpaper <file|id|title>" >&2; exit 1; }
+            start "$(cat "$STATE.last")"
         fi ;;
+    # A player is a client of the compositor, and it dies with its surface:
+    # connecting over RDP adds an output, KWin closes the layer surfaces it had,
+    # and the wallpaper is simply gone. Nothing restarts it, which is why it
+    # looked like RDP was switching the wallpaper off. Watching costs one wakeup
+    # every few seconds and covers a crash and a monitor being plugged in too.
+    supervise)
+        while true; do
+            [[ -s "$STATE" ]] && ! playing && start "$(cat "$STATE")"
+            sleep 5
+        done ;;
     *) start "$1" ;;
 esac
