@@ -1,11 +1,17 @@
-# mmsimpulse shell shortcuts.  name <TAB> default keys <TAB> description
+# mmsimpulse shell shortcuts.  name <TAB> default keys <TAB> description <TAB> command
 #
 # Only actions that work as a single press are here.  kglobalaccel launches a
 # command and has no release event, so the shell's press/release pairs
 # (searchToggleRelease, workspaceNumber, the *Open/*Close variants, osdVolume*)
 # have no KDE equivalent and are left unbound.  Leave the key column empty to
 # install an action without a default binding.
-searchToggle	Meta+Return	Toggle search
+#
+# A fourth column makes the entry run that command instead of an IPC call into
+# the shell, and such an entry is bound to its key on install rather than being
+# left for you to assign.  That is for keys nothing else in this session
+# answers: without plasmashell the volume keys belong to a component that never
+# starts, so they do nothing at all until something claims them.
+searchToggle	Meta+Space	Toggle search
 overviewWorkspacesToggle	Meta+E	Toggle overview
 overlayToggle	Meta+Slash	Toggle overlay
 sidebarLeftToggle	Meta+J	Toggle left sidebar
@@ -29,3 +35,9 @@ screenTranslate	Meta+Shift+G	Translate screen
 overviewClipboardToggle	Meta+Shift+V	Clipboard history
 overviewEmojiToggle	Meta+Period	Emoji picker
 overviewSymbolsToggle	Meta+Shift+M	Material symbols picker
+
+# Keys with nobody home in a session without plasmashell.
+terminal	Meta+Return	Terminal	kitty -1
+volumeUp	Volume Up	Volume up	wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+
+volumeDown	Volume Down	Volume down	wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
+volumeMute	Volume Mute	Mute	wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle

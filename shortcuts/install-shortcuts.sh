@@ -58,6 +58,8 @@ while IFS= read -r line; do
     name=$(cut -f1 <<< "$line")
     keys=$(cut -f2 <<< "$line")
     desc=$(cut -f3 <<< "$line")
+    cmd=$(cut -f4 <<< "$line")
+    [[ "$cmd" == "$line" ]] && cmd=""
 
     # Only worth mentioning as a heads-up now: the key is offered as the KCM's
     # default, not bound, so nothing is actually stolen.
@@ -72,7 +74,7 @@ while IFS= read -r line; do
 [Desktop Entry]
 Type=Application
 Name=mmsimpulse: $desc
-Exec=env -u QT_QPA_PLATFORM qs -c $CONFIG ipc call $name trigger
+Exec=${cmd:-env -u QT_QPA_PLATFORM qs -c $CONFIG ipc call $name trigger}
 NoDisplay=true
 Terminal=false
 X-KDE-GlobalAccel-CommandShortcut=true
@@ -108,9 +110,14 @@ DESKTOP
     if [[ -n "$current" && -n "$bound" && "$bound" != none ]]; then
         continue
     fi
+    # An entry with a command of its own is for a key nothing else in this
+    # session answers, so it is bound rather than offered — an unbound volume
+    # key is just a dead key. The launcher is bound for the same reason: a
+    # session with no way to open it has no way to start anything. Both still
+    # yield to a key something already holds.
     live=none
-    if [[ "$name" == searchToggle ]] && ! key_taken "Meta+Space"; then
-        live="Meta+Space"
+    if [[ -n "$cmd" || "$name" == searchToggle ]] && ! key_taken "$keys"; then
+        live="$keys"
     fi
     kwriteconfig6 --file kglobalshortcutsrc --group services --group "$entry" \
         --key _k_friendly_name "mmsimpulse: $desc"
@@ -122,6 +129,15 @@ DESKTOP
         --key _launch "$live"
     written+=("$entry"$'\t'"$desc"$'\t'"$live")
 done < "$TSV"
+
+# Volume Up/Down/Mute belong to [kmix], which is plasma-pa's global shortcut
+# component and never starts here — the keys fire, nothing answers, and they
+# read as broken. Releasing them in the file is what lets the entries above
+# take the keys at the next login; kglobalacceld reads this file only when it
+# starts, so a running session keeps whatever it already registered.
+for action in increase_volume decrease_volume mute; do
+    kwriteconfig6 --file kglobalshortcutsrc --group kmix --key "$action" "none,none,$action"
+done
 
 kbuildsycoca6 --noincremental >/dev/null 2>&1 || true
 
@@ -135,11 +151,12 @@ kbuildsycoca6 --noincremental >/dev/null 2>&1 || true
 if busctl --user status org.kde.kglobalaccel >/dev/null 2>&1; then
     for row in "${written[@]}"; do
         IFS=$'\t' read -r entry desc live <<< "$row"
-        # An empty key list is what unbinds one. Meta+Space is the single key
-        # this script binds, so its Qt keycode is spelled out rather than
-        # parsed: Qt::MetaModifier (0x10000000) | Qt::Key_Space (0x20).
+        # Only the ones this script left unbound need correcting. Where it did
+        # bind a key, the daemon has already put the action on it: the key it
+        # read from X-KDE-Shortcuts and the key written above are the same one.
+        # An empty key list is what unbinds.
+        [[ "$live" == none ]] || continue
         keys=0
-        [[ "$live" == "Meta+Space" ]] && keys="1 268435488"
         busctl --user call org.kde.kglobalaccel /kglobalaccel org.kde.KGlobalAccel \
             setForeignShortcut asai 4 "$entry" _launch "mmsimpulse: $desc" \
             "mmsimpulse: $desc" $keys >/dev/null 2>&1 || true
@@ -147,7 +164,7 @@ if busctl --user status org.kde.kglobalaccel >/dev/null 2>&1; then
 fi
 echo "Installed $(ls "$APPDIR"/$CONFIG-*.desktop | wc -l) shortcut entries in $APPDIR"
 
-echo "Only the launcher is bound by default (Meta+Space). Assign the rest in"
+echo "Bound: the launcher, a terminal, and the volume keys. Assign the rest in"
 echo "System Settings > Shortcuts, search for \"mmsimpulse\"."
 
 if (( ${#conflicts[@]} )); then
