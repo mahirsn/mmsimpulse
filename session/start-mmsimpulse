@@ -14,6 +14,30 @@
 set -uo pipefail
 
 CONFIG=mmsimpulse
+
+# Which Quickshell configuration provides the widgets. The session keeps its own
+# identity either way — the log, the Wayland socket and the bin directory are
+# still mmsimpulse — so only the shell changes. Pick one with MMSIMPULSE_SHELL,
+# or by writing its name into ~/.config/mmsimpulse/shell.
+#
+# A session whose shell does not exist has no bar, no launcher and no way to
+# start anything, which is unrecoverable without a TTY. So a name that resolves
+# to no shell.qml falls back to ours rather than being taken at its word.
+SHELL_CONFIG="${MMSIMPULSE_SHELL:-}"
+[[ -n "$SHELL_CONFIG" ]] ||
+    SHELL_CONFIG="$(head -n1 "$HOME/.config/$CONFIG/shell" 2>/dev/null | tr -d '[:space:]')"
+SHELL_CONFIG="${SHELL_CONFIG:-$CONFIG}"
+if [[ "$SHELL_CONFIG" != "$CONFIG" ]]; then
+    found=""
+    for dir in "${XDG_CONFIG_HOME:-$HOME/.config}" /etc/xdg; do
+        [[ -f "$dir/quickshell/$SHELL_CONFIG/shell.qml" ]] && { found=1; break; }
+    done
+    if [[ -z "$found" ]]; then
+        echo "Shell '$SHELL_CONFIG' has no shell.qml; falling back to $CONFIG" >&2
+        SHELL_CONFIG="$CONFIG"
+    fi
+fi
+
 LOG="$HOME/.local/share/$CONFIG.log"
 mkdir -p "$(dirname "$LOG")"
 # Everything that writes here appends, so that a crash-looping shell cannot
@@ -231,8 +255,8 @@ fi
             [[ -n "$DISPLAY" ]] && export DISPLAY \
                 && dbus-update-activation-environment --systemd DISPLAY 2>/dev/null
         fi
-        qs -c "$CONFIG" >>"$LOG" 2>&1 || true
-        echo "$CONFIG exited, restarting in 2s..." >&2
+        qs -c "$SHELL_CONFIG" >>"$LOG" 2>&1 || true
+        echo "$SHELL_CONFIG exited, restarting in 2s..." >&2
         sleep 2
     done
 ) &
@@ -247,5 +271,5 @@ mmsimpulse-wallpaper supervise >/dev/null 2>&1 &
 # The compositor exiting is what ends the session.
 wait "$KWIN_PID"
 kill "$SHELL_PID" 2>/dev/null
-pkill -f "qs -c $CONFIG" 2>/dev/null
+pkill -f "qs -c $SHELL_CONFIG" 2>/dev/null
 trap - EXIT

@@ -71,6 +71,29 @@ Most of these are KWin's own actions, so they honour
 `kwinrc [Windows] PerOutputVirtualDesktops` — turn it on for per-monitor
 workspaces, the way Hyprland behaves.
 
+## Another shell
+
+The session and the widgets are separate things: `start-mmsimpulse` brings up
+KWin, the services a shell needs and the workspace keys, then runs one
+Quickshell configuration on top. Which one is a choice.
+
+```sh
+echo nandoroid > ~/.config/mmsimpulse/shell   # or: MMSIMPULSE_SHELL=nandoroid
+```
+
+The name is a Quickshell configuration — a directory holding `shell.qml` under
+`~/.config/quickshell` or `/etc/xdg/quickshell`. Everything else stays
+mmsimpulse: the log, the Wayland socket, `mmsimpulse-wallpaper`, the bridge. A
+name with no `shell.qml` behind it falls back to our own shell, because a
+session that comes up with no bar and no launcher can only be escaped from a
+TTY.
+
+Note that a shell written for Hyprland will come up but run half-blind:
+workspaces and the window list arrive over Hyprland's IPC socket, and its
+global shortcuts want `hyprland_global_shortcuts_v1`, neither of which KWin
+has. `overlay/` is where our own skin is taught to read those from KWin
+instead; nothing yet does that for a third-party shell.
+
 ## Known gaps
 
 - **No live window previews in the overview.** They need a foreign-toplevel
