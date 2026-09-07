@@ -1,0 +1,6 @@
+# A qmldir is authoritative once it exists: a directory import exposes only
+# what is listed here, including the types this module's own files use.
+singleton Hyprland Hyprland.qml
+GlobalShortcut 1.0 GlobalShortcut.qml
+HyprlandFocusGrab 1.0 HyprlandFocusGrab.qml
+KwinBackend 1.0 KwinBackend.qml
