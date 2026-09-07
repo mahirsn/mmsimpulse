@@ -88,11 +88,33 @@ name with no `shell.qml` behind it falls back to our own shell, because a
 session that comes up with no bar and no launcher can only be escaped from a
 TTY.
 
-Note that a shell written for Hyprland will come up but run half-blind:
-workspaces and the window list arrive over Hyprland's IPC socket, and its
-global shortcuts want `hyprland_global_shortcuts_v1`, neither of which KWin
-has. `overlay/` is where our own skin is taught to read those from KWin
-instead; nothing yet does that for a third-party shell.
+### NAnDoroid
+
+[NAnDoroid](https://github.com/na-ive/nandoroid-shell) is written for Hyprland
+and there is a patched build of it here:
+
+```sh
+./install.sh --nandoroid
+echo nandoroid-kwin > ~/.config/mmsimpulse/shell
+```
+
+It installs beside our own shell under its own name, so both stay selectable
+and an upstream copy on a Hyprland session is untouched. `rm` that file to come
+back.
+
+Two things had to be bridged. Fifty of its QML files import
+`Quickshell.Hyprland` and read workspaces, monitors and the window list off
+that singleton; `overlay/nandoroid/compat/` reimplements it on `KwinBackend`
+and `patch-nandoroid.py` rewrites the import line to reach it. Replacing the
+module under its own URI does not work — Quickshell serves it from its own qrc,
+which beats anything on `QML_IMPORT_PATH`. Separately, its data service shells
+out to `hyprctl -j` six ways; `mmsimpulse-hyprctl` answers those from the
+bridge, so that file needed no porting at all.
+
+What is missing: its fifteen global shortcuts reach the shell over `ipc call
+key_<name> trigger` but nothing writes the `.desktop` entries that would bind
+them to keys, and click-outside-to-close needs `hyprland_focus_grab_v1`, which
+KWin has no equivalent for — panels close by their own means instead.
 
 ## Known gaps
 

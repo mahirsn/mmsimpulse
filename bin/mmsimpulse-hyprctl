@@ -1,0 +1,201 @@
+#!/usr/bin/env python3
+"""Answer a Hyprland shell's `hyprctl` calls from KWin.
+
+A shell written for Hyprland does not get all of its state through
+Quickshell.Hyprland. NAnDoroid, for one, runs `hyprctl clients -j`,
+`monitors -j` and four more reads out of services/HyprlandData.qml and parses
+the JSON. Under KWin those commands either do not exist or return nothing, and
+the shell logs a parse error per poll and shows no windows at all.
+
+Rather than port that service — 326 lines of QML, and it is not the only
+hyprctl caller in the shell — this answers the same six reads in the same
+shape. overlay/nandoroid/patch-nandoroid.py rewrites the command name, so the
+QML is untouched.
+
+Window records already arrive from mmsimpulse-kwin-bridge in `hyprctl clients
+-j` shape; that is what the bridge was built to feed. Monitor geometry is the
+one thing it does not carry, so that comes from kscreen-doctor.
+
+Writes (dispatch, keyword, eval, --batch) are answered too, but only the
+handful of dispatchers that have a KWin equivalent do anything. The rest exit
+quietly: a shell that treats a failed layout change as fatal would be worse off
+for an error it cannot act on.
+
+Usage: mmsimpulse-hyprctl <subcommand> [args...]
+"""
+
+import json
+import re
+import subprocess
+import sys
+
+import dbus
+
+BUS_NAME = "org.mmsimpulse.KWin"
+OBJ_PATH = "/Windows"
+
+
+def bridge():
+    bus = dbus.SessionBus()
+    return dbus.Interface(bus.get_object(BUS_NAME, OBJ_PATH), BUS_NAME)
+
+
+def snapshot():
+    try:
+        return json.loads(str(bridge().Snapshot()))
+    except (dbus.DBusException, ValueError):
+        return {"windows": [], "workspaces": [], "outputs": [], "current": 1,
+                "activeOutput": ""}
+
+
+def outputs():
+    """Monitor geometry, which the bridge does not carry.
+
+    hyprctl reports physical pixels plus a scale, and so does kscreen-doctor,
+    so the two need no conversion between them.
+    """
+    try:
+        raw = subprocess.run(["kscreen-doctor", "-j"], capture_output=True,
+                             text=True, timeout=5).stdout
+        return [o for o in json.loads(raw).get("outputs", []) if o.get("enabled")]
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return []
+
+
+def workspace_stub(state, ws_id):
+    ws = next((w for w in state["workspaces"] if w["id"] == ws_id), None)
+    return {"id": ws_id, "name": ws["name"] if ws else str(ws_id)}
+
+
+def monitors(state):
+    active = {o.get("name"): o.get("current") for o in state.get("outputs", [])}
+    result = []
+    for index, out in enumerate(sorted(outputs(), key=lambda o: o.get("priority") or 99)):
+        name = out.get("name", "")
+        size = out.get("size", {})
+        pos = out.get("pos", {})
+        result.append({
+            "id": index,
+            "name": name,
+            "description": out.get("model", ""),
+            "make": out.get("vendor", ""),
+            "model": out.get("model", ""),
+            "width": size.get("width", 0),
+            "height": size.get("height", 0),
+            # KWin exposes no refresh rate here and nothing in the shell reads
+            # it; a plausible constant beats a missing key.
+            "refreshRate": 60.0,
+            "x": pos.get("x", 0),
+            "y": pos.get("y", 0),
+            "activeWorkspace": workspace_stub(
+                state, active.get(name, state.get("current", 1))),
+            "specialWorkspace": {"id": 0, "name": ""},
+            "reserved": [0, 0, 0, 0],
+            "scale": out.get("scale", 1),
+            "transform": 0,
+            # Hyprland means "has the cursor"; KWin's notion of an active
+            # output is the closest thing the bridge reports.
+            "focused": name == state.get("activeOutput", ""),
+            "dpmsStatus": True,
+            "disabled": False,
+        })
+    return result
+
+
+def clients(state):
+    return [dict(w, mapped=not w.get("minimized", False),
+                 hidden=w.get("minimized", False),
+                 pinned=False,
+                 initialClass=w.get("class", ""),
+                 initialTitle=w.get("title", ""))
+            for w in state.get("windows", [])]
+
+
+def workspaces(state):
+    windows = state.get("windows", [])
+    return [{
+        "id": ws["id"],
+        "name": ws["name"],
+        "monitor": ws.get("output", ""),
+        "windows": sum(1 for w in windows if w.get("workspaceId") == ws["id"]),
+        "hasfullscreen": any(w.get("fullscreen") for w in windows
+                             if w.get("workspaceId") == ws["id"]),
+        "lastwindow": "",
+        "lastwindowtitle": "",
+    } for ws in state.get("workspaces", [])]
+
+
+def dispatch(args):
+    """Only the dispatchers that mean something under KWin.
+
+    Everything else — window swapping, z-order, special workspaces, layout
+    changes — has no equivalent that maps cleanly, and a shell that polls one
+    of them does not want an error it cannot act on.
+    """
+    text = " ".join(args)
+    addr = (re.search(r"address:\s*(0x[0-9a-fA-F]+|\{[^}]+\})", text) or [None, None])[1]
+    try:
+        b = bridge()
+        if re.search(r"closewindow|window\.close", text):
+            if addr:
+                b.WindowAction(addr, "close", "")
+        elif re.search(r"movetoworkspace|window\.move", text) and not re.search(r"pixel", text):
+            ws = re.search(r"(?:workspace\s*=\s*\"?(?:name:)?|movetoworkspace(?:silent)?\s+)(\d+)", text)
+            if addr and ws:
+                b.WindowAction(addr, "move", ws.group(1))
+        elif re.search(r"focuswindow", text) or (re.search(r"focus", text) and addr):
+            if addr:
+                b.WindowAction(addr, "activate", "")
+        elif re.match(r"\s*workspace\s", text) or re.search(r"workspace\s*=", text):
+            state = snapshot()
+            output = state.get("activeOutput", "")
+            rel = re.search(r"r([+-])(\d+)", text)
+            if rel:
+                count = len(state.get("workspaces", [])) or 1
+                cur = state.get("current", 1)
+                step = int(rel[2]) * (1 if rel[1] == "+" else -1)
+                b.SetDesktopForOutput(output, ((cur - 1 + step) % count) + 1)
+            else:
+                num = re.search(r"(\d+)", text)
+                if num:
+                    b.SetDesktopForOutput(output, int(num.group(1)))
+    except dbus.DBusException:
+        pass
+
+
+def main(argv):
+    args = [a for a in argv[1:] if a != "-j"]
+    if not args:
+        return 0
+    command, rest = args[0], args[1:]
+
+    if command == "clients":
+        print(json.dumps(clients(snapshot())))
+    elif command == "monitors":
+        print(json.dumps(monitors(snapshot())))
+    elif command == "workspaces":
+        print(json.dumps(workspaces(snapshot())))
+    elif command == "activeworkspace":
+        state = snapshot()
+        print(json.dumps(next(
+            (w for w in workspaces(state) if w["id"] == state.get("current")), {})))
+    elif command == "activewindow":
+        state = snapshot()
+        print(json.dumps(next(
+            (c for c in clients(state) if c.get("focused")), {})))
+    elif command == "getoption":
+        option = rest[0] if rest else ""
+        # Only general:layout is ever asked for, and KWin tiles nothing.
+        print(json.dumps({"option": option, "str": "dwindle", "set": False}))
+    elif command == "dispatch":
+        dispatch(rest)
+        print("ok")
+    else:
+        # keyword, eval, --batch, and whatever a newer shell invents. Answering
+        # "ok" keeps callers that check the exit status happy.
+        print("ok")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

@@ -146,6 +146,26 @@ Singleton {
         };
     }
 
+    // Hyprland's IPC event stream. The shell's own data service listens for
+    // these to know when to re-read, so without them the bar shows whatever
+    // was true when it started. KWin has no such stream; the bridge's pushes
+    // are the equivalent, translated here into the few event names the shell
+    // actually branches on.
+    signal rawEvent(var event)
+
+    Connections {
+        target: root.onHyprland ? Hl.Hyprland : null
+        function onRawEvent(event) { root.rawEvent(event) }
+    }
+
+    Connections {
+        target: root.onHyprland ? null : root.backend
+        function onWindowListChanged() { root.rawEvent({ name: "openwindow", data: "" }) }
+        function onWorkspacesChanged() { root.rawEvent({ name: "workspace", data: "" }) }
+        function onActiveWorkspaceChanged() { root.rawEvent({ name: "workspace", data: "" }) }
+        function onActiveOutputChanged() { root.rawEvent({ name: "focusedmon", data: "" }) }
+    }
+
     property var backend: null
 
     readonly property QtObject kwinWorkspaces: QtObject {

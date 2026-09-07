@@ -45,6 +45,18 @@ RULES = [
      re.compile(r"\bproperty\s+list<HyprlandWorkspace>"),
      "property var"),
 
+    # The shell does not get all its state through Quickshell.Hyprland:
+    # services/HyprlandData.qml runs `hyprctl clients -j` and five more reads
+    # and parses the JSON. bin/mmsimpulse-hyprctl answers those from the KWin
+    # bridge, so only the command name has to change — both the argv form and
+    # the ones buried in a bash -c string.
+    ("hyprctl argv",
+     re.compile(r'"hyprctl"'),
+     '"mmsimpulse-hyprctl"'),
+    ("hyprctl in shell string",
+     re.compile(r'(?<![-\w/])hyprctl(?= )'),
+     "mmsimpulse-hyprctl"),
+
     # HyprlandToplevel is an attached property Quickshell puts on Wayland
     # toplevel handles. There is no attaching object under KWin, so reading
     # through it throws and takes the whole binding with it. Optional chaining

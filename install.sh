@@ -9,6 +9,7 @@
 #
 #   ./install.sh            install / update
 #   ./install.sh --shell    only refresh the shell config (fast iteration)
+#   ./install.sh --nandoroid  install NAnDoroid as an alternative shell
 #   ./install.sh --yes      answer prompts with their default (for scripts)
 set -euo pipefail
 
@@ -32,6 +33,46 @@ command -v kwin_wayland >/dev/null || {
     echo "kwin_wayland not found. Install the kwin package." >&2
     exit 1
 }
+
+# --- NAnDoroid, as an alternative shell -------------------------------------
+# Installed beside ours rather than over it, under its own configuration name,
+# so both stay selectable and an upstream copy on a Hyprland session is left
+# alone. Same shape as the main install below: stage, overlay, patch, swap.
+if [[ "${1:-}" == "--nandoroid" ]]; then
+    NAN_SRC="${MMSIMPULSE_NANDOROID:-$HOME/.local/src/nandoroid}"
+    NAN_REPO="${MMSIMPULSE_NANDOROID_REPO:-https://github.com/na-ive/nandoroid-shell.git}"
+    NAN_DIR="$HOME/.config/quickshell/nandoroid-kwin"
+
+    if [[ ! -d "$NAN_SRC/dotfiles/.config/quickshell/nandoroid" ]]; then
+        echo "==> cloning NAnDoroid -> $NAN_SRC"
+        git clone --depth 1 "$NAN_REPO" "$NAN_SRC"
+    fi
+
+    echo "==> NAnDoroid -> $NAN_DIR"
+    NAN_STAGE="$NAN_DIR.new"
+    rm -rf "$NAN_STAGE"
+    mkdir -p "$NAN_STAGE/compat"
+    rsync -a --exclude '.git' "$NAN_SRC/dotfiles/.config/quickshell/nandoroid/" "$NAN_STAGE/"
+    cp "$REPO"/overlay/nandoroid/compat/* "$NAN_STAGE/compat/"
+    # One copy of the backend lives in the repo; both shells are handed it.
+    cp "$REPO/overlay/services/KwinBackend.qml" "$NAN_STAGE/compat/"
+    python3 "$REPO/overlay/nandoroid/patch-nandoroid.py" "$NAN_STAGE"
+
+    rm -rf "$NAN_DIR.old"
+    [[ -d "$NAN_DIR" ]] && mv "$NAN_DIR" "$NAN_DIR.old"
+    mv "$NAN_STAGE" "$NAN_DIR"
+    rm -rf "$NAN_DIR.old"
+
+    # Its hyprctl reads are answered by mmsimpulse-hyprctl, so the bin
+    # directory has to be current even when only this half is installed.
+    mkdir -p "$BIN"
+    install -m755 "$REPO"/bin/mmsimpulse-* "$BIN/"
+
+    echo
+    echo "Done. Select it with:  echo nandoroid-kwin > $SHELL_CONFIG/shell"
+    echo "Back to ours with:     rm $SHELL_CONFIG/shell"
+    exit 0
+fi
 
 ask() {
     # $1 question, $2 default (y/n). Non-interactive runs take the default.

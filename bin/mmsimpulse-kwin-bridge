@@ -252,6 +252,22 @@ class Bridge(dbus.service.Object):
     def SetDesktopForOutput(self, output_name, position):
         self.run_once(desktop_script(output_name, position))
 
+    @dbus.service.method(BUS_NAME, in_signature="", out_signature="s")
+    def Snapshot(self):
+        """The same state emit() streams, for callers that cannot read stdout.
+
+        mmsimpulse-hyprctl answers a Hyprland shell's `hyprctl -j` reads from
+        here. Starting a second bridge for that would be the obvious
+        alternative and is a trap: both would load the KWin script under the
+        same name, and only whichever one holds the bus name receives its
+        pushes — the other publishes nothing but virtual desktops.
+        """
+        try:
+            return json.dumps(self.state())
+        except dbus.DBusException as exc:
+            print(f"[bridge] KWin unreachable: {exc}", file=sys.stderr, flush=True)
+            return "{}"
+
     @dbus.service.method(BUS_NAME, in_signature="sss", out_signature="")
     def WindowAction(self, window_uuid, action, value):
         try:
@@ -264,19 +280,23 @@ class Bridge(dbus.service.Object):
         if self.pending is None:
             self.pending = GLib.timeout_add(DEBOUNCE_MS, self.emit)
 
+    def state(self):
+        vdm = dbus.Interface(
+            self.bus.get_object(KWIN, "/VirtualDesktopManager"),
+            "org.freedesktop.DBus.Properties")
+        desktops = [(int(d[0]), str(d[1]), str(d[2]))
+                    for d in vdm.Get(VDM_IFACE, "desktops")]
+        current = str(vdm.Get(VDM_IFACE, "current"))
+        return build_snapshot(self.payload, desktops, current)
+
     def emit(self):
         self.pending = None
         try:
-            vdm = dbus.Interface(
-                self.bus.get_object(KWIN, "/VirtualDesktopManager"),
-                "org.freedesktop.DBus.Properties")
-            desktops = [(int(d[0]), str(d[1]), str(d[2]))
-                        for d in vdm.Get(VDM_IFACE, "desktops")]
-            current = str(vdm.Get(VDM_IFACE, "current"))
+            snapshot = self.state()
         except dbus.DBusException as exc:
             print(f"[bridge] KWin unreachable: {exc}", file=sys.stderr, flush=True)
             return GLib.SOURCE_REMOVE
-        print(json.dumps(build_snapshot(self.payload, desktops, current)), flush=True)
+        print(json.dumps(snapshot), flush=True)
         return GLib.SOURCE_REMOVE
 
     # -- KWin script lifecycle --------------------------------------------
