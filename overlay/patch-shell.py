@@ -404,6 +404,34 @@ SPECIFIC = [
      '        HyprlandData.windowList.map(w => w.pid)',
      '        (WM.compositor === "hyprland" ? HyprlandData.windowList : WM.windowList).map(w => w.pid)'),
 
+    # --- tooltips off the screen edge ---------------------------------------
+    # The bar is a 40px layer surface, so a tooltip inside it is a popup
+    # surface of its own, positioned against the item it belongs to. Nothing
+    # constrains that to the output: the battery indicator sits at the right
+    # end of the bar, and its tooltip runs past the screen edge and is clipped
+    # there. Qt's own constraining works against the popup's window, which
+    # here is the bar strip, so it never fires horizontally.
+    #
+    # Clamp into the bar window, which spans the output. Read the width off the
+    # anchor item rather than the tooltip: once the tooltip is promoted to its
+    # own surface it is no longer inside the bar's window, but its anchor
+    # still is.
+    ("modules/common/widgets/StyledToolTip.qml",
+     "    delay: 0\n",
+     """    delay: 0
+
+    x: {
+        const anchor = root.parent;
+        const width = anchor?.QsWindow?.window?.width ?? 0;
+        const centered = ((anchor?.width ?? 0) - root.implicitWidth) / 2;
+        if (width <= 0) return centered;
+        const origin = anchor.mapToItem(null, 0, 0).x;
+        const margin = 4;
+        return Math.round(Math.max(margin - origin,
+            Math.min(centered, width - root.implicitWidth - margin - origin)));
+    }
+"""),
+
     # --- config location ----------------------------------------------------
     # Own config directory, so mmsimpulse and the Hyprland session stop sharing
     # (and overwriting) each other's settings.
