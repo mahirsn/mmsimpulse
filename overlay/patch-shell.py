@@ -404,33 +404,26 @@ SPECIFIC = [
      '        HyprlandData.windowList.map(w => w.pid)',
      '        (WM.compositor === "hyprland" ? HyprlandData.windowList : WM.windowList).map(w => w.pid)'),
 
-    # --- tooltips off the screen edge ---------------------------------------
-    # The bar is a 40px layer surface, so a tooltip inside it is a popup
-    # surface of its own, positioned against the item it belongs to. Nothing
-    # constrains that to the output: the battery indicator sits at the right
-    # end of the bar, and its tooltip runs past the screen edge and is clipped
-    # there. Qt's own constraining works against the popup's window, which
-    # here is the bar strip, so it never fires horizontally.
-    #
-    # Clamp into the bar window, which spans the output. Read the width off the
-    # anchor item rather than the tooltip: once the tooltip is promoted to its
-    # own surface it is no longer inside the bar's window, but its anchor
-    # still is.
-    ("modules/common/widgets/StyledToolTip.qml",
-     "    delay: 0\n",
-     """    delay: 0
+    # --- bar popups on the wrong screen -------------------------------------
+    # QsWindow is the attached object; the screen hangs off its `window`, which
+    # is how BarContent.qml spells it. One level short here means the
+    # expression is undefined, the binding falls back to null, and Quickshell
+    # puts every bar popup on its default screen — so hovering the battery on
+    # one monitor opens its popup on the other. Invisible with one screen.
+    ("modules/common/widgets/StyledPopup.qml",
+     "        screen: root.hoverTarget?.QsWindow?.screen ?? null",
+     "        screen: root.hoverTarget?.QsWindow?.window?.screen ?? null"),
 
-    x: {
-        const anchor = root.parent;
-        const width = anchor?.QsWindow?.window?.width ?? 0;
-        const centered = ((anchor?.width ?? 0) - root.implicitWidth) / 2;
-        if (width <= 0) return centered;
-        const origin = anchor.mapToItem(null, 0, 0).x;
-        const margin = 4;
-        return Math.round(Math.max(margin - origin,
-            Math.min(centered, width - root.implicitWidth - margin - origin)));
-    }
-"""),
+    # Same bug's other half: with the screen wrong, so is the width the popup
+    # is clamped into. And clamp the window, not the background inside it —
+    # the window is wider by the shadow's elevation margin on both sides, so
+    # clamping the inner rectangle lets the surface hang over the edge.
+    ("modules/common/widgets/StyledPopup.qml",
+     "            const maxLeft = popupWindow.screen.width - popupBackground.implicitWidth - margin - 10",
+     "            const maxLeft = popupWindow.screen.width - popupWindow.implicitWidth - 10"),
+    ("modules/common/widgets/StyledPopup.qml",
+     "            const maxTop = popupWindow.screen.height - popupBackground.implicitHeight - margin - 15",
+     "            const maxTop = popupWindow.screen.height - popupWindow.implicitHeight - 15"),
 
     # --- config location ----------------------------------------------------
     # Own config directory, so mmsimpulse and the Hyprland session stop sharing
