@@ -54,6 +54,10 @@ CONFIG_DIR = [
 # (old, new) applied to every .qml outside EXCLUDE. Order matters: the longer
 # ".values" forms have to run before the bare ones.
 GLOBAL = [
+    # hyprpicker speaks wlr-screencopy, which KWin does not implement, so the
+    # bar's colour picker button did nothing at all. mmsimpulse-colorpicker is
+    # the same feature over the desktop portal, which KDE's backend implements.
+    ('"hyprpicker", "-a"', '"mmsimpulse-colorpicker"'),
     ("Hyprland.focusedMonitor", "WM.focusedMonitor"),
     ("Hyprland.monitorFor(", "WM.monitorFor("),
     ("Hyprland.monitors.values", "WM.monitors"),

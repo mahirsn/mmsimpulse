@@ -19,6 +19,7 @@ is what the fallback crops to, and callers already know it. Without it a
 multi-monitor fallback returns the whole workspace.
 """
 
+import json
 import os
 import subprocess
 import sys
@@ -39,7 +40,51 @@ FORMATS = {
 }
 
 
-def spectacle_capture(target, geometry):
+def outputs():
+    """Enabled outputs with their logical position and scale."""
+    try:
+        raw = subprocess.run(["kscreen-doctor", "-j"], capture_output=True,
+                             text=True, timeout=5).stdout
+        return [o for o in json.loads(raw).get("outputs", []) if o.get("enabled")]
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return []
+
+
+def crop_args(output_name, geometry):
+    """Where this output sits inside spectacle's whole-workspace capture.
+
+    Not where the caller says it is. Spectacle renders every output at its own
+    native size but positions them at the logical coordinate times the largest
+    scale in use, so with one 1.0 and one 1.25 output the second one starts 480
+    pixels further right than its logical x. Cropping at the logical
+    coordinates then returns a picture of the wrong region — which is what a
+    mixed-scale setup was getting.
+
+    With a single scale, or a single output, this is the identity and the crop
+    is exactly what it always was.
+    """
+    x, y, width, height = geometry
+    outs = outputs()
+    scales = [float(o.get("scale") or 1) for o in outs]
+    mine = next((o for o in outs if o.get("name") == output_name), None)
+    if not outs or mine is None:
+        return ["-crop", "%dx%d+%d+%d" % (width, height, x, y), "+repage"]
+
+    top = max(scales)
+    scale = float(mine.get("scale") or 1)
+    size = mine.get("size", {})
+    native_w = int(size.get("width") or round(width * scale))
+    native_h = int(size.get("height") or round(height * scale))
+    args = ["-crop", "%dx%d+%d+%d" % (native_w, native_h,
+                                      round(x * top), round(y * top)), "+repage"]
+    # Callers ask for a picture of the output in logical pixels and size their
+    # UI to it, so hand back that size rather than the panel's own.
+    if (native_w, native_h) != (width, height):
+        args += ["-resize", "%dx%d!" % (width, height)]
+    return args
+
+
+def spectacle_capture(output_name, target, geometry):
     """Whole workspace through spectacle, cropped to one output."""
     with tempfile.TemporaryDirectory() as tmp:
         shot = os.path.join(tmp, "workspace.png")
@@ -51,8 +96,7 @@ def spectacle_capture(target, geometry):
         out = "png:-" if target == "-" else "png:%s" % target
         argv = ["magick", shot]
         if geometry:
-            x, y, width, height = geometry
-            argv += ["-crop", "%dx%d+%d+%d" % (width, height, x, y), "+repage"]
+            argv += crop_args(output_name, geometry)
         argv.append(out)
         crop = subprocess.run(argv, capture_output=(target != "-"))
         if crop.returncode:
@@ -86,7 +130,7 @@ def main():
     except dbus.DBusException:
         os.close(read_fd)
         os.close(write_fd)
-        return spectacle_capture(target, geometry)
+        return spectacle_capture(output_name, target, geometry)
     # The compositor holds its own copy now; ours has to go or the read blocks
     # forever waiting for an end that never comes.
     os.close(write_fd)

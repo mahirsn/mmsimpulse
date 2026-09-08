@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""Pick a colour off the screen and copy it, the way `hyprpicker -a` does.
+
+hyprpicker speaks wlr-screencopy, which KWin does not implement, so the bar's
+colour picker button did nothing at all here. The desktop portal's PickColor
+is the same feature by another route, and xdg-desktop-portal-kde implements it.
+
+Prints the colour as #RRGGBB and puts it on the clipboard, so callers that only
+launched hyprpicker for its side effect keep working unchanged.
+
+Usage: mmsimpulse-colorpicker [--no-copy]
+"""
+
+import subprocess
+import sys
+
+import dbus
+import dbus.mainloop.glib
+from gi.repository import GLib
+
+PORTAL = "org.freedesktop.portal.Desktop"
+PATH = "/org/freedesktop/portal/desktop"
+SCREENSHOT = "org.freedesktop.portal.Screenshot"
+REQUEST = "org.freedesktop.portal.Request"
+TIMEOUT_MS = 120000
+
+
+def main():
+    copy = "--no-copy" not in sys.argv[1:]
+    dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+    bus = dbus.SessionBus()
+    loop = GLib.MainLoop()
+    result = {}
+
+    # The Request object's path is derived from the caller's bus name and a
+    # token, which is fiddly to predict and easy to get subtly wrong. Listening
+    # for the signal by interface instead costs nothing: this process makes one
+    # request and then exits.
+    def on_response(response, results):
+        result["response"] = int(response)
+        result["color"] = results.get("color")
+        loop.quit()
+
+    bus.add_signal_receiver(
+        on_response, signal_name="Response", dbus_interface=REQUEST)
+
+    try:
+        iface = dbus.Interface(bus.get_object(PORTAL, PATH), SCREENSHOT)
+        iface.PickColor("", {})
+    except dbus.DBusException as exc:
+        print(f"portal PickColor failed: {exc.get_dbus_message()}", file=sys.stderr)
+        return 1
+
+    GLib.timeout_add(TIMEOUT_MS, loop.quit)
+    loop.run()
+
+    if result.get("response") != 0 or not result.get("color"):
+        # 1 is the user cancelling, which is not a failure worth reporting.
+        return 0 if result.get("response") == 1 else 1
+
+    # The portal answers in 0..1 doubles, one per channel.
+    r, g, b = (max(0, min(255, round(float(c) * 255))) for c in result["color"])
+    hex_colour = f"#{r:02X}{g:02X}{b:02X}"
+    print(hex_colour)
+
+    if copy:
+        try:
+            subprocess.run(["wl-copy", hex_colour], check=False)
+        except OSError:
+            pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
