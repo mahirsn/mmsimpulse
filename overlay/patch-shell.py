@@ -259,6 +259,58 @@ SPECIFIC = [
                 }
             }"""),
 
+    # --- tray menu: open only once there is something to show ----------------
+    # The popup is created and opened in the same frame, before the tray app has
+    # answered with its menu. A menu that arrives afterwards resizes the window,
+    # but the Wayland surface keeps the buffer it was mapped with, so the
+    # compositor stretches that first tiny frame — a blurry, giant "Unpin" with
+    # the real rows laid out underneath it, clickable but never repainted.
+    #
+    # Steam hits this every time: it rebuilds its menu constantly (revision 1100
+    # against Discord's 3), so its sixteen entries always land after the map.
+    # Discord's are already there, which is why only Steam looked broken.
+    ("modules/ii/bar/SysTrayMenu.qml",
+     """    function open() {
+        root.visible = true;
+        root.menuOpened(root);
+    }""",
+     """    QsMenuOpener {
+        id: rootOpener
+        menu: root.trayItemMenuHandle
+    }
+
+    property bool wantOpen: false
+    // Set once waiting has gone on long enough to stop being worth it.
+    property bool doneWaiting: false
+    readonly property int entryCount: rootOpener.children.values.length
+
+    onEntryCountChanged: root.showIfReady()
+
+    function open() {
+        root.wantOpen = true;
+        root.showIfReady();
+    }
+
+    function showIfReady() {
+        if (!root.wantOpen || root.visible)
+            return;
+        if (root.entryCount === 0 && !root.doneWaiting)
+            return;
+        root.visible = true;
+        root.menuOpened(root);
+    }
+
+    // An app whose menu is genuinely empty, or one that never answers, still has
+    // to open — otherwise right-clicking it would do nothing at all.
+    Timer {
+        interval: 300
+        running: root.wantOpen && !root.visible
+        onTriggered: {
+            root.doneWaiting = true;
+            root.showIfReady();
+        }
+    }"""),
+
     # --- tray menu ----------------------------------------------------------
     # The rows of a tray menu know their own size, but the ColumnLayout holding
     # them reports none of it here, so the popup ends up 28x37 — the size of its
