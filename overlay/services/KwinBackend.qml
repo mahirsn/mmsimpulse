@@ -115,6 +115,13 @@ Scope {
         return root.monitors.find(m => m.name === screen.name) ?? null;
     }
 
+    // Asked per monitor, because KWin's desktops are global: the workspace flag
+    // is true on every screen at once, so a fullscreen window on one of them
+    // would hug the bar on all of them and never let go.
+    function monitorHasFullscreen(monitorName) {
+        return root.outputs.find(o => o.name === monitorName)?.hasfullscreen ?? false;
+    }
+
     function activeWorkspaceForMonitor(monitorName) {
         // Virtual desktops are global unless kwinrc [Windows]
         // PerOutputVirtualDesktops is on, in which case each output reports its

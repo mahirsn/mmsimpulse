@@ -118,9 +118,15 @@ def build_snapshot(payload, desktops, current_id):
 
     # With PerOutputVirtualDesktops on, each output has its own current
     # desktop; without it they all report the global one.
+    # Per output as well as per workspace: KWin's virtual desktops are global, so
+    # the workspace flag is true on every monitor at once and a fullscreen game
+    # on one screen would speak for the other.
+    fullscreen_outputs = {w.get("output", "") for w in payload.get("windows", [])
+                          if w.get("fullscreen")}
     outputs = [
         {"name": o.get("name", ""),
-         "current": by_uuid.get(o.get("currentDesktop", ""), current)}
+         "current": by_uuid.get(o.get("currentDesktop", ""), current),
+         "hasfullscreen": o.get("name", "") in fullscreen_outputs}
         for o in payload.get("outputs", [])
     ]
 

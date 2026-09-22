@@ -360,7 +360,17 @@ import Quickshell.Io
     # all. WM is the facade both compositors answer through.
     ("modules/ii/bar/Bar.qml",
      """property bool monitorHasFullscreen: HyprlandData.workspaceById[thisMonitorData?.activeWorkspace?.id]?.hasfullscreen ?? false""",
-     """property bool monitorHasFullscreen: WM.activeWorkspaceForMonitor(barRoot.screen?.name)?.hasfullscreen ?? false"""),
+     """property bool monitorHasFullscreen: WM.monitorHasFullscreen(barRoot.screen?.name)"""),
+
+    # Hyprland's workspaces already belong to one monitor, so there the workspace
+    # flag is the per-monitor answer. KWin's desktops are global and it is not.
+    ("services/HyprlandBackend.qml",
+     """    function activeWorkspaceForMonitor(monitorName) {""",
+     """    function monitorHasFullscreen(monitorName) {
+        return root.activeWorkspaceForMonitor(monitorName)?.hasfullscreen ?? false;
+    }
+
+    function activeWorkspaceForMonitor(monitorName) {"""),
 
     ("modules/ii/bar/Bar.qml",
      """                property bool monitorHasSpecialOpen:""",
