@@ -934,17 +934,24 @@ WORKSPACE_MODEL = [
 
 IMPORT = "import qs.services"
 
+# QsWindow is an attached type from Quickshell. A file that never imported it
+# leaves root.QsWindow undefined, the binding throws rather than falling back,
+# and the widget renders with no colour at all -- which is how this first
+# shipped.
+NEEDED = (("WM.", IMPORT), ("BarStyle.", IMPORT), ("QsWindow", "import Quickshell"))
+
 
 def ensure_import(text):
-    """WM and BarStyle live in qs.services; a file that gained a call to either
-    may not import it."""
-    if IMPORT in text or not any(name in text for name in ("WM.", "BarStyle.")):
-        return text
-    imports = list(re.finditer(r"^import .*$", text, re.M))
-    if not imports:
-        return text
-    at = imports[-1].end()
-    return text[:at] + "\n" + IMPORT + text[at:]
+    """Add the imports the rewrites above rely on, where they are missing."""
+    for marker, statement in NEEDED:
+        if marker not in text or re.search(r"^%s$" % re.escape(statement), text, re.M):
+            continue
+        imports = list(re.finditer(r"^import .*$", text, re.M))
+        if not imports:
+            continue
+        at = imports[-1].end()
+        text = text[:at] + "\n" + statement + text[at:]
+    return text
 
 
 def main():
@@ -991,7 +998,7 @@ def main():
 
     for rel in BAR_STYLE_FILES:
         apply(rel, "Config.options.bar.cornerStyle",
-              "BarStyle.corner(root.QsWindow.window?.screen?.name)")
+              "BarStyle.corner(root.QsWindow?.window?.screen?.name)")
 
     for rel in sorted(changed):
         path = files[rel]
