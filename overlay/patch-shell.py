@@ -355,6 +355,13 @@ import Quickshell.Io
      """                property int cornerStyle: 0 // 0: Hug | 1: Float | 2: Plain rectangle
                 property bool hugWhenFullscreen: true"""),
 
+    # HyprlandData is the Hyprland-only source and is empty on KWin, so this read
+    # was always false there and the bar never noticed a fullscreen window at
+    # all. WM is the facade both compositors answer through.
+    ("modules/ii/bar/Bar.qml",
+     """property bool monitorHasFullscreen: HyprlandData.workspaceById[thisMonitorData?.activeWorkspace?.id]?.hasfullscreen ?? false""",
+     """property bool monitorHasFullscreen: WM.activeWorkspaceForMonitor(barRoot.screen?.name)?.hasfullscreen ?? false"""),
+
     ("modules/ii/bar/Bar.qml",
      """                property bool monitorHasSpecialOpen:""",
      """                property int effectiveCornerStyle: (Config.options.bar.hugWhenFullscreen && barRoot.monitorHasFullscreen)
