@@ -30,8 +30,26 @@ function describe(w) {
         active: w.active === true,
         minimized: w.minimized === true,
         fullscreen: w.fullScreen === true,
+        maximized: isMaximized(w),
         keepAbove: w.keepAbove === true
     };
+}
+
+// KWin's scripting API exposes fullScreen but nothing for maximised, so the
+// window is compared against the area it would fill if it were. clientArea is
+// the supported way to ask that and already accounts for the bar's reserved
+// strip, which is the whole point: a maximised window stops at the bar, and a
+// gapped bar then shows desktop around it.
+function isMaximized(w) {
+    try {
+        const area = workspace.clientArea(KWin.MaximizeArea, w);
+        const g = w.frameGeometry;
+        const near = (a, b) => Math.abs(a - b) <= 2;
+        return near(g.width, area.width) && near(g.height, area.height)
+            && near(g.x, area.x) && near(g.y, area.y);
+    } catch (e) {
+        return false;
+    }
 }
 
 function push() {
@@ -78,7 +96,11 @@ function connectIfPresent(obj, name) {
 function track(w) {
     // Deliberately not frameGeometryChanged: it fires every frame of a drag and
     // would flood the bus. interactiveMoveResizeFinished is the settled edge.
+    // maximizedChanged is not in every build, and connectIfPresent skips what is
+    // missing; frameGeometryChanged is the fallback that always fires, and
+    // maximising is not a drag so it does not flood the way a resize would.
     ["captionChanged", "desktopsChanged", "minimizedChanged", "fullScreenChanged",
+     "maximizedChanged", "maximizedModeChanged", "tileChanged",
      "keepAboveChanged", "outputChanged", "interactiveMoveResizeFinished"]
         .forEach(name => connectIfPresent(w, name));
 }

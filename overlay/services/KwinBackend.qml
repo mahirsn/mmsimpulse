@@ -122,6 +122,10 @@ Scope {
         return root.outputs.find(o => o.name === monitorName)?.hasfullscreen ?? false;
     }
 
+    function monitorHasMaximized(monitorName) {
+        return root.outputs.find(o => o.name === monitorName)?.hasmaximized ?? false;
+    }
+
     function activeWorkspaceForMonitor(monitorName) {
         // Virtual desktops are global unless kwinrc [Windows]
         // PerOutputVirtualDesktops is on, in which case each output reports its

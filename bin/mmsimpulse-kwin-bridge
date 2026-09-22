@@ -123,10 +123,16 @@ def build_snapshot(payload, desktops, current_id):
     # on one screen would speak for the other.
     fullscreen_outputs = {w.get("output", "") for w in payload.get("windows", [])
                           if w.get("fullscreen")}
+    # Reported apart from fullscreen: a fullscreen window covers the bar, so it
+    # is the maximised one -- which stops at the bar and leaves a gapped design
+    # showing desktop around it -- that the bar actually has to react to.
+    maximized_outputs = {w.get("output", "") for w in payload.get("windows", [])
+                         if w.get("maximized") and not w.get("minimized")}
     outputs = [
         {"name": o.get("name", ""),
          "current": by_uuid.get(o.get("currentDesktop", ""), current),
-         "hasfullscreen": o.get("name", "") in fullscreen_outputs}
+         "hasfullscreen": o.get("name", "") in fullscreen_outputs,
+         "hasmaximized": o.get("name", "") in maximized_outputs}
         for o in payload.get("outputs", [])
     ]
 

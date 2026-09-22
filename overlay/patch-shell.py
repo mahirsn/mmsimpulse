@@ -374,9 +374,25 @@ import Quickshell.Io
 
     ("modules/ii/bar/Bar.qml",
      """                property bool monitorHasSpecialOpen:""",
-     """                property int effectiveCornerStyle: (Config.options.bar.hugWhenFullscreen && barRoot.monitorHasFullscreen)
+     """                property bool monitorHasMaximized: WM.monitorHasMaximized(barRoot.screen?.name)
+                // Maximised is the case this is for. A fullscreen window covers the
+                // bar outright, so nothing it does there is visible; a maximised one
+                // stops at the bar, and a gapped design then shows desktop all
+                // around it -- which is the view being complained about.
+                property int effectiveCornerStyle: (Config.options.bar.hugWhenFullscreen
+                        && (barRoot.monitorHasFullscreen || barRoot.monitorHasMaximized))
                     ? 0 : Config.options.bar.cornerStyle
                 property bool monitorHasSpecialOpen:"""),
+
+    ("services/HyprlandBackend.qml",
+     """    function monitorHasFullscreen(monitorName) {""",
+     """    // Hyprland reports maximised as a fullscreen mode rather than a state of
+    // its own, so there is nothing separate to answer with here.
+    function monitorHasMaximized(monitorName) {
+        return false;
+    }
+
+    function monitorHasFullscreen(monitorName) {"""),
 
     ("modules/ii/bar/Bar.qml",
      """                    BarContent {
