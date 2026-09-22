@@ -291,6 +291,65 @@ SPECIFIC = [
     HyprlandFocusGrab {
         id: grab"""),
 
+    # --- tray menu: scroll a menu taller than the screen ----------------------
+    # Nothing clamped the popup and nothing scrolled inside it, so an app with
+    # more entries than the screen is tall put the rest below the bottom edge
+    # with no way to reach them. The window stops at the screen and the content
+    # flicks, using the shell's own scroll widget so the wheel behaves the way
+    # it does everywhere else here.
+    ("modules/ii/bar/SysTrayMenu.qml",
+     """        return result + popupBackground.padding * 2 + root.padding * 2;""",
+     """        const wanted = result + popupBackground.padding * 2 + root.padding * 2;
+        // Nothing assigns `screen` on this popup, so the height comes from the
+        // window it is anchored to -- the bar, which is on the screen the menu
+        // will appear on.
+        const tall = root.anchor?.window?.screen?.height ?? root.screen?.height ?? 0;
+        return tall > 0 ? Math.min(wanted, tall - root.padding * 4) : wanted;"""),
+
+    ("modules/ii/bar/SysTrayMenu.qml",
+     """            implicitHeight: stackView.implicitHeight + popupBackground.padding * 2""",
+     """            // Follows the window once the window itself has hit the screen.
+            implicitHeight: Math.min(stackView.implicitHeight + popupBackground.padding * 2,
+                                     root.implicitHeight - root.padding * 2)"""),
+
+    ("modules/ii/bar/SysTrayMenu.qml",
+     """            StackView {
+                id: stackView
+                anchors {
+                    fill: parent
+                    margins: popupBackground.padding
+                }""",
+     """            StyledFlickable {
+                id: scroller
+                anchors {
+                    fill: parent
+                    margins: popupBackground.padding
+                }
+                contentWidth: width
+                contentHeight: stackView.implicitHeight
+                // Only takes the wheel when there is something to scroll, so a
+                // short menu still passes it through to whatever is underneath.
+                interactive: contentHeight > height
+                clip: true
+
+            StackView {
+                id: stackView
+                width: scroller.width
+                height: stackView.implicitHeight"""),
+
+    ("modules/ii/bar/SysTrayMenu.qml",
+     """                initialItem: SubMenu {
+                    handle: root.trayItemMenuHandle
+                }
+            }
+        }""",
+     """                initialItem: SubMenu {
+                    handle: root.trayItemMenuHandle
+                }
+            }
+            }
+        }"""),
+
     # --- tray menu: open only once there is something to show ----------------
     # The popup is created and opened in the same frame, before the tray app has
     # answered with its menu. A menu that arrives afterwards resizes the window,
