@@ -79,6 +79,11 @@ def build_snapshot(payload, desktops, current_id):
     for ws in workspaces:
         ws["is_active"] = ws["id"] == current
 
+    # The bar asks a workspace whether anything on it is fullscreen. Hyprland
+    # answers that per workspace and KWin does not, so it is worked out here --
+    # without it the flag is undefined on KDE and the bar never notices.
+    fullscreen_on = set()
+
     windows = []
     for w in payload.get("windows", []):
         on = [by_uuid[u] for u in w.get("desktops", []) if u in by_uuid]
@@ -104,6 +109,12 @@ def build_snapshot(payload, desktops, current_id):
             "floating": True,
             "xwayland": False,
         })
+        if w.get("fullscreen"):
+            fullscreen_on.add(ws_id)
+
+    # Named the way Hyprland names it, because the shell reads that name.
+    for ws in workspaces:
+        ws["hasfullscreen"] = ws["id"] in fullscreen_on
 
     # With PerOutputVirtualDesktops on, each output has its own current
     # desktop; without it they all report the global one.

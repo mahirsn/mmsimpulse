@@ -333,6 +333,65 @@ import Quickshell.Io
     }
 """),
 
+    # --- hug the bar when something is fullscreen -----------------------------
+    # A gapped bar around a fullscreen window shows desktop down the sides of
+    # it, which is the case this exists for. Hug has no gap, so the bar stops
+    # framing anything the moment a window takes the screen.
+    #
+    # Every corner-style read in the bar goes through one value now: twenty-five
+    # call sites each deciding for themselves is how a per-monitor condition
+    # gets forgotten at half of them. The bulk rewrites come first and the
+    # declarations after, because the declarations are the one place that still
+    # has to name the setting itself.
+    ("modules/ii/bar/Bar.qml",
+     """Config.options.bar.cornerStyle""",
+     """barRoot.effectiveCornerStyle"""),
+    ("modules/ii/bar/BarContent.qml",
+     """Config.options.bar.cornerStyle""",
+     """root.cornerStyle"""),
+
+    ("modules/common/Config.qml",
+     """                property int cornerStyle: 0 // 0: Hug | 1: Float | 2: Plain rectangle""",
+     """                property int cornerStyle: 0 // 0: Hug | 1: Float | 2: Plain rectangle
+                property bool hugWhenFullscreen: true"""),
+
+    ("modules/ii/bar/Bar.qml",
+     """                property bool monitorHasSpecialOpen:""",
+     """                property int effectiveCornerStyle: (Config.options.bar.hugWhenFullscreen && barRoot.monitorHasFullscreen)
+                    ? 0 : Config.options.bar.cornerStyle
+                property bool monitorHasSpecialOpen:"""),
+
+    ("modules/ii/bar/Bar.qml",
+     """                    BarContent {
+                        id: barContent""",
+     """                    BarContent {
+                        id: barContent
+                        cornerStyle: barRoot.effectiveCornerStyle"""),
+
+    ("modules/ii/bar/BarContent.qml",
+     """Item {
+    id: root
+    implicitHeight: Appearance.sizes.barHeight""",
+     """Item {
+    id: root
+    // Set by the bar, which is what knows whether this monitor has a fullscreen
+    // window on it. Falls back to the setting so the component still stands on
+    // its own.
+    property int cornerStyle: Config.options.bar.cornerStyle
+    implicitHeight: Appearance.sizes.barHeight"""),
+
+    ("modules/ii/settings/pages/BarConfig.qml",
+     """                    ConfigSelectionArray {
+                        text: Translation.tr("Bar style")""",
+     """                    ConfigSwitch {
+                        text: Translation.tr("Hug when fullscreen")
+                        enabled: Config.options.bar.cornerStyle !== 0
+                        checked: Config.options.bar.hugWhenFullscreen
+                        onCheckedChanged: { Config.options.bar.hugWhenFullscreen = checked; }
+                    }
+                    ConfigSelectionArray {
+                        text: Translation.tr("Bar style")"""),
+
     # --- which program takes the picture -------------------------------------
     # The shell's own selector reads the screen over wlr-screencopy, which KWin
     # does not implement: it froze nothing and saved nothing. Spectacle ships
