@@ -291,6 +291,147 @@ SPECIFIC = [
     HyprlandFocusGrab {
         id: grab"""),
 
+    # --- which program takes the picture -------------------------------------
+    # The shell's own selector reads the screen over wlr-screencopy, which KWin
+    # does not implement: it froze nothing and saved nothing. Spectacle ships
+    # with KDE, does regions and records, and is the default here. The tool is a
+    # setting because the right answer differs per machine -- gpu-screen-recorder
+    # is far lighter for long captures, OBS is what someone already streaming
+    # wants, and the built-in one is correct again on Hyprland.
+    ("modules/common/Config.qml",
+     """            property JsonObject screenRecord: JsonObject {
+                property string savePath: Directories.videos.replace("file://","") // strip "file://"
+            }
+
+            property JsonObject screenSnip: JsonObject {
+                property string savePath: "" // only copy to clipboard when empty
+            }""",
+     """            property JsonObject screenRecord: JsonObject {
+                property string savePath: Directories.videos.replace("file://","") // strip "file://"
+                // spectacle | gpu-screen-recorder | obs | shell
+                property string tool: "spectacle"
+            }
+
+            property JsonObject screenSnip: JsonObject {
+                property string savePath: "" // only copy to clipboard when empty
+                // spectacle | flameshot | shell
+                property string tool: "spectacle"
+            }"""),
+
+    ("modules/ii/regionSelector/RegionSelector.qml",
+     """
+    function screenshot() {
+        if (Persistent.states.record.enable) {""",
+     """
+    // Which program answers the screenshot and record buttons. The shell's own
+    // selector stays available as "shell" but is not the default: its frozen
+    // frame and its recorder both read the screen over wlr-screencopy, which
+    // KWin does not implement, so on KDE they show and save nothing.
+    function snipCommand() {
+        const dir = Config.options.screenSnip.savePath;
+        switch (Config.options.screenSnip.tool) {
+        case "shell":
+            return "";
+        case "flameshot":
+            return dir !== "" ? `flameshot gui -p '${dir}'` : `flameshot gui -c`;
+        default:
+            // Save and copy in one press, which is the whole point of a quick
+            // screenshot. spectacle's own -c goes through a clipboard helper
+            // that never starts without plasmashell -- it silently leaves the
+            // clipboard empty here -- so the file goes through wl-copy instead.
+            return dir !== ""
+                ? `mkdir -p '${dir}' && f='${dir}/screenshot-'$(date '+%Y-%m-%d_%H.%M.%S')'.png' && spectacle -r -b -n -o "$f" && wl-copy --type image/png < "$f" && notify-send "Screenshot" "Saved and copied" -a "Screen Snip" -i "$f"`
+                : `f=$(mktemp --suffix=.png) && spectacle -r -b -n -o "$f" && wl-copy --type image/png < "$f" && rm -f "$f" && notify-send "Screenshot" "Copied to clipboard" -a "Screen Snip" -i "image-x-generic"`;
+        }
+    }
+
+    function recordCommand(withSound) {
+        const dir = Config.options.screenRecord.savePath;
+        switch (Config.options.screenRecord.tool) {
+        case "shell":
+            return "";
+        case "gpu-screen-recorder":
+            // -w portal, because KWin exposes no window id the recorder can read
+            // directly; the portal picker is how it gets a source here.
+            return `mkdir -p '${dir}' && gpu-screen-recorder -w portal -f 60${withSound ? " -a default_output" : ""} -o '${dir}/recording-$(date '+%Y-%m-%d_%H.%M.%S').mp4'`;
+        case "obs":
+            return "obs --startrecording --minimize-to-tray";
+        default:
+            // Spectacle keeps its own stop control, so nothing here has to track
+            // whether a recording is running.
+            return "spectacle -R region";
+        }
+    }
+
+    function screenshot() {
+        const external = root.snipCommand();
+        if (external !== "") {
+            Quickshell.execDetached(["bash", "-c", external]);
+            return;
+        }
+        if (Persistent.states.record.enable) {"""),
+
+    ("modules/ii/regionSelector/RegionSelector.qml",
+     """
+    function record() {
+        if (Persistent.states.record.enable) {""",
+     """
+    function record() {
+        const external = root.recordCommand(false);
+        if (external !== "") {
+            Quickshell.execDetached(["bash", "-c", external]);
+            return;
+        }
+        if (Persistent.states.record.enable) {"""),
+
+    ("modules/ii/regionSelector/RegionSelector.qml",
+     """
+    function recordWithSound() {
+        if (Persistent.states.record.enable) {""",
+     """
+    function recordWithSound() {
+        const external = root.recordCommand(true);
+        if (external !== "") {
+            Quickshell.execDetached(["bash", "-c", external]);
+            return;
+        }
+        if (Persistent.states.record.enable) {"""),
+
+    # The setting has to be reachable, so it sits with the save paths it belongs
+    # beside rather than in a corner of its own.
+    ("modules/ii/settings/pages/ServicesConfig.qml",
+     """            GroupedList {
+                ConfigTextArea {
+                    id: videoRecordPathField""",
+     """            GroupedList {
+                ConfigSelectionArray {
+                    text: Translation.tr("Screenshot tool")
+                    icon: "screenshot_monitor"
+                    currentValue: Config.options.screenSnip.tool
+                    onSelected: newValue => { Config.options.screenSnip.tool = newValue; }
+                    options: [
+                        { displayName: Translation.tr("Spectacle"), icon: "photo_camera", value: "spectacle" },
+                        { displayName: Translation.tr("Flameshot"), icon: "brush", value: "flameshot" },
+                        { displayName: Translation.tr("Built-in"), icon: "crop", value: "shell" }
+                    ]
+                }
+
+                ConfigSelectionArray {
+                    text: Translation.tr("Screen recorder")
+                    icon: "videocam"
+                    currentValue: Config.options.screenRecord.tool
+                    onSelected: newValue => { Config.options.screenRecord.tool = newValue; }
+                    options: [
+                        { displayName: Translation.tr("Spectacle"), icon: "photo_camera", value: "spectacle" },
+                        { displayName: Translation.tr("GPU Screen Recorder"), icon: "memory", value: "gpu-screen-recorder" },
+                        { displayName: Translation.tr("OBS"), icon: "cast", value: "obs" },
+                        { displayName: Translation.tr("Built-in"), icon: "crop", value: "shell" }
+                    ]
+                }
+
+                ConfigTextArea {
+                    id: videoRecordPathField"""),
+
     # --- tray menu: scroll a menu taller than the screen ----------------------
     # Nothing clamped the popup and nothing scrolled inside it, so an app with
     # more entries than the screen is tall put the rest below the bottom edge
