@@ -346,9 +346,6 @@ import Quickshell.Io
     ("modules/ii/bar/Bar.qml",
      """Config.options.bar.cornerStyle""",
      """barRoot.effectiveCornerStyle"""),
-    ("modules/ii/bar/BarContent.qml",
-     """Config.options.bar.cornerStyle""",
-     """root.cornerStyle"""),
 
     ("modules/common/Config.qml",
      """                property int cornerStyle: 0 // 0: Hug | 1: Float | 2: Plain rectangle""",
@@ -395,11 +392,21 @@ import Quickshell.Io
     function monitorHasFullscreen(monitorName) {"""),
 
     ("modules/ii/bar/Bar.qml",
-     """                    BarContent {
-                        id: barContent""",
-     """                    BarContent {
-                        id: barContent
-                        cornerStyle: barRoot.effectiveCornerStyle"""),
+     """                Component.onCompleted: {
+                    GlobalFocusGrab.addPersistent(barRoot);
+                }""",
+     """                Component.onCompleted: {
+                    GlobalFocusGrab.addPersistent(barRoot);
+                    // Published once up front as well: the change handler only fires
+                    // when the value moves, and a bar that starts hugged would
+                    // otherwise never tell its widgets.
+                    BarStyle.publish(barRoot.screen?.name, barRoot.effectiveCornerStyle);
+                }"""),
+
+    ("modules/ii/bar/Bar.qml",
+     """                    ? 0 : Config.options.bar.cornerStyle""",
+     """                    ? 0 : Config.options.bar.cornerStyle
+                onEffectiveCornerStyleChanged: BarStyle.publish(barRoot.screen?.name, barRoot.effectiveCornerStyle)"""),
 
     ("modules/ii/bar/BarContent.qml",
      """Item {
@@ -871,6 +878,33 @@ import Quickshell.Io
 ]
 
 # Hyprland-only cursor tweaks: harmless to keep, but they must not fire on KWin.
+# Every bar widget decides for itself whether to draw as a Material pill, and
+# each one read the setting directly -- so hugging on maximise changed the bar's
+# shell and left twenty widgets still styled as M3. They ask BarStyle now, which
+# answers per screen, because one monitor can have a maximised window while the
+# other does not.
+BAR_STYLE_FILES = [
+    "modules/ii/bar/BarContent.qml",
+    "modules/ii/bar/BarGroup.qml",
+    "modules/ii/bar/BatteryIndicator.qml",
+    "modules/ii/bar/Divisor.qml",
+    "modules/ii/bar/DocktoPanel.qml",
+    "modules/ii/bar/LauncherButton.qml",
+    "modules/ii/bar/LeftSidebarButton.qml",
+    "modules/ii/bar/Media.qml",
+    "modules/ii/bar/NotificationUnreadCount.qml",
+    "modules/ii/bar/PowerButton.qml",
+    "modules/ii/bar/SysTray.qml",
+    "modules/ii/bar/SystemIcons.qml",
+    "modules/ii/bar/UpdatesCount.qml",
+    "modules/ii/bar/UtilButtons.qml",
+    "modules/ii/bar/Visualizer.qml",
+    "modules/ii/bar/WeatherBar.qml",
+    "modules/ii/bar/Workspaces.qml",
+    "modules/common/widgets/BarWidgetSwitcher.qml",
+    "modules/common/widgets/BarWidgetSwitcherArea.qml",
+]
+
 GUARD = [
     ("modules/ii/sidebarLeft/anime/BooruImage.qml",
      'Hyprland.dispatch("hl.config({cursor = {no_warps = true}})")',
@@ -902,8 +936,9 @@ IMPORT = "import qs.services"
 
 
 def ensure_import(text):
-    """WM lives in qs.services; a file that gained a WM call may not import it."""
-    if IMPORT in text or "WM." not in text:
+    """WM and BarStyle live in qs.services; a file that gained a call to either
+    may not import it."""
+    if IMPORT in text or not any(name in text for name in ("WM.", "BarStyle.")):
         return text
     imports = list(re.finditer(r"^import .*$", text, re.M))
     if not imports:
@@ -953,6 +988,10 @@ def main():
 
     for old, new in WORKSPACE_MODEL:
         apply("modules/common/models/WorkspaceModel.qml", old, new)
+
+    for rel in BAR_STYLE_FILES:
+        apply(rel, "Config.options.bar.cornerStyle",
+              "BarStyle.corner(root.QsWindow.window?.screen?.name)")
 
     for rel in sorted(changed):
         path = files[rel]
