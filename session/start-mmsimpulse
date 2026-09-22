@@ -124,12 +124,22 @@ pkill -x kglobalacceld 2>/dev/null
 # "no such session", KWin falls back to a session backend that has no seat and
 # therefore no terminal control, and Ctrl+Alt+F<n> silently stops switching
 # terminals for the rest of the login. Everything else still works, which is
-# what makes it hard to spot. Wait for the scope before starting anything.
-for _ in $(seq 1 50); do
-    busctl --system call org.freedesktop.login1 /org/freedesktop/login1 \
-        org.freedesktop.login1.Manager GetSessionByPID u $$ >/dev/null 2>&1 && break
+# what makes it hard to spot.
+#
+# Waiting on GetSessionByPID is not enough, and that is how this shipped
+# broken: logind answers that call from the audit session id before it has
+# moved the process into session-N.scope, so the wait returned immediately and
+# the compositor was still forked into the old cgroup. A child inherits the
+# cgroup it was forked in, which is why every later child -- the shell, the
+# tray proxy -- ended up inside the scope and only the compositor stayed out.
+# The cgroup is the thing logind actually resolves sessions from, so wait for
+# that and nothing else.
+for _ in $(seq 1 100); do
+    grep -q 'session-.*\.scope' /proc/self/cgroup && break
     sleep 0.1
 done
+grep -q 'session-.*\.scope' /proc/self/cgroup \
+    || echo "start-mmsimpulse: still outside session scope; Ctrl+Alt+F<n> will not switch terminals" >&2
 
 # `env -u`, because kwin_wayland picks its backend from the environment: with
 # WAYLAND_DISPLAY set it nests inside a parent compositor instead of taking
