@@ -411,22 +411,7 @@ import Quickshell.Io
     // window on it. Falls back to the setting so the component still stands on
     // its own.
     property int cornerStyle: Config.options.bar.cornerStyle
-    // Hug-on-maximise changes the bar's shape, not which design it is. M3's
-    // pills and containers keep following the style that was chosen, or
-    // switching shape strips every widget of its styling and the bar comes back
-    // looking unfinished.
-    readonly property int configuredStyle: Config.options.bar.cornerStyle
     implicitHeight: Appearance.sizes.barHeight"""),
-
-    ("modules/ii/bar/BarContent.qml",
-     """readonly property bool isMaterial: root.cornerStyle === 3""",
-     """readonly property bool isMaterial: root.configuredStyle === 3"""),
-    ("modules/ii/bar/BarContent.qml",
-     """        if (root.cornerStyle !== 3) return false;""",
-     """        if (root.configuredStyle !== 3) return false;"""),
-    ("modules/ii/bar/BarContent.qml",
-     """        if (root.cornerStyle !== 3) return Appearance.colors.colPrimaryContainer;""",
-     """        if (root.configuredStyle !== 3) return Appearance.colors.colPrimaryContainer;"""),
 
     ("modules/ii/settings/pages/BarConfig.qml",
      """                    ConfigSelectionArray {
