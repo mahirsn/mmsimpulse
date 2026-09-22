@@ -291,6 +291,48 @@ SPECIFIC = [
     HyprlandFocusGrab {
         id: grab"""),
 
+    # A Flow only wraps inside a width it was given, and with a label present this
+    # was handed none -- every selection row ran off the edge of the page in one
+    # line. Every setting that offers a choice goes through here.
+    ("modules/common/widgets/ConfigSelectionArray.qml",
+     """        Layout.fillWidth: !root.text""",
+     """        Layout.fillWidth: true"""),
+
+    # Offering a program that is not installed gives a button that does nothing
+    # when pressed and says nothing about why.
+    ("modules/ii/settings/pages/ServicesConfig.qml",
+     """import qs.modules.common.widgets
+""",
+     """import qs.modules.common.widgets
+import Quickshell.Io
+"""),
+
+    ("modules/ii/settings/pages/ServicesConfig.qml",
+     """ContentPage {
+    id: page
+    forceWidth: true
+    bottomContentPadding: 15
+""",
+     """ContentPage {
+    id: page
+    forceWidth: true
+    bottomContentPadding: 15
+
+    property var installedTools: []
+    Process {
+        running: true
+        command: ["bash", "-c",
+            "for t in spectacle flameshot gpu-screen-recorder obs; do command -v  >/dev/null && echo ; done"]
+        stdout: StdioCollector {
+            onStreamFinished: page.installedTools = text.trim().split("\n").filter(t => t.length > 0)
+        }
+    }
+    function availableTools(list) {
+        // "shell" is the shell's own selector, which needs nothing installed.
+        return list.filter(o => o.value === "shell" || page.installedTools.includes(o.value));
+    }
+"""),
+
     # --- which program takes the picture -------------------------------------
     # The shell's own selector reads the screen over wlr-screencopy, which KWin
     # does not implement: it froze nothing and saved nothing. Spectacle ships
@@ -409,11 +451,11 @@ SPECIFIC = [
                     icon: "screenshot_monitor"
                     currentValue: Config.options.screenSnip.tool
                     onSelected: newValue => { Config.options.screenSnip.tool = newValue; }
-                    options: [
+                    options: page.availableTools([
                         { displayName: Translation.tr("Spectacle"), icon: "photo_camera", value: "spectacle" },
                         { displayName: Translation.tr("Flameshot"), icon: "brush", value: "flameshot" },
                         { displayName: Translation.tr("Built-in"), icon: "crop", value: "shell" }
-                    ]
+                    ])
                 }
 
                 ConfigSelectionArray {
@@ -421,12 +463,12 @@ SPECIFIC = [
                     icon: "videocam"
                     currentValue: Config.options.screenRecord.tool
                     onSelected: newValue => { Config.options.screenRecord.tool = newValue; }
-                    options: [
+                    options: page.availableTools([
                         { displayName: Translation.tr("Spectacle"), icon: "photo_camera", value: "spectacle" },
                         { displayName: Translation.tr("GPU Screen Recorder"), icon: "memory", value: "gpu-screen-recorder" },
                         { displayName: Translation.tr("OBS"), icon: "cast", value: "obs" },
                         { displayName: Translation.tr("Built-in"), icon: "crop", value: "shell" }
-                    ]
+                    ])
                 }
 
                 ConfigTextArea {
