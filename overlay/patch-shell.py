@@ -259,6 +259,38 @@ SPECIFIC = [
                 }
             }"""),
 
+    # --- dismiss a panel when the click went elsewhere ------------------------
+    # hyprland-focus-grab-v1 is what closes these panels on Hyprland, and KWin
+    # implements nothing like it, so the shell disables the grab there and the
+    # panels then stay open until Escape or the key that opened them. What KWin
+    # does report is which window holds focus, and a panel losing the user to
+    # another window is the case people actually hit. Layer surfaces are not in
+    # that list, so opening a panel cannot trip it.
+    #
+    # ponytail: a click on bare desktop focuses nothing and so does not dismiss.
+    # Covering that needs an input surface beneath the panels, which is a change
+    # to the panels rather than to this singleton.
+    ("services/GlobalFocusGrab.qml",
+     """    HyprlandFocusGrab {
+        id: grab""",
+     """    property string lastFocused: ""
+
+    Connections {
+        target: WM
+        enabled: WM.compositor !== "hyprland"
+        function onWindowListChanged() {
+            const now = WM.windowList.find(w => w.focused)?.address ?? "";
+            if (now === root.lastFocused)
+                return;
+            root.lastFocused = now;
+            if (now !== "" && root.dismissable.length > 0)
+                root.dismiss();
+        }
+    }
+
+    HyprlandFocusGrab {
+        id: grab"""),
+
     # --- tray menu: open only once there is something to show ----------------
     # The popup is created and opened in the same frame, before the tray app has
     # answered with its menu. A menu that arrives afterwards resizes the window,
