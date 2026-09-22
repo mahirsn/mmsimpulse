@@ -269,6 +269,11 @@ SPECIFIC = [
     # Steam hits this every time: it rebuilds its menu constantly (revision 1100
     # against Discord's 3), so its sixteen entries always land after the map.
     # Discord's are already there, which is why only Steam looked broken.
+    #
+    # Waiting for a non-zero entry count fixed Steam and nothing else. An app
+    # that answers in stages -- one entry, then the rest a frame later -- is
+    # mapped on the first one and resized after it, which is the same bug with
+    # a different app's name on it. Wait for the count to stop changing.
     ("modules/ii/bar/SysTrayMenu.qml",
      """    function open() {
         root.visible = true;
@@ -284,11 +289,13 @@ SPECIFIC = [
     property bool doneWaiting: false
     readonly property int entryCount: rootOpener.children.values.length
 
-    onEntryCountChanged: root.showIfReady()
+    // Every change restarts the wait: an app that sends its menu in stages must
+    // not be mapped between them.
+    onEntryCountChanged: settle.restart()
 
     function open() {
         root.wantOpen = true;
-        root.showIfReady();
+        settle.restart();
     }
 
     function showIfReady() {
@@ -298,6 +305,14 @@ SPECIFIC = [
             return;
         root.visible = true;
         root.menuOpened(root);
+    }
+
+    // Short enough that a menu already in hand still feels instant, long enough
+    // to bridge the gap between one app's two answers.
+    Timer {
+        id: settle
+        interval: 80
+        onTriggered: root.showIfReady()
     }
 
     // An app whose menu is genuinely empty, or one that never answers, still has
