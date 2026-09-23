@@ -393,6 +393,52 @@ SPECIFIC = [
                 ConfigSelectionArray {
                     text: Translation.tr("Bar style")"""),
 
+    # --- screenshot and record buttons: Spectacle on KDE -----------------------
+    # The shell's own selector and recorder read the screen over
+    # wlr-screencopy, which KWin does not implement. On KDE both buttons hand
+    # over to Spectacle: a region selection is saved and copied in one go
+    # (install.sh turns on Spectacle's accept-on-release, so letting go of the
+    # mouse takes the picture), and recording keeps Spectacle's own stop
+    # control. The copy goes through wl-copy because Spectacle's own clipboard
+    # helper needs plasmashell. Hyprland keeps the shell's own tools.
+    ("modules/ii/regionSelector/RegionSelector.qml",
+     """
+    function screenshot() {
+        if (Persistent.states.record.enable) {""",
+     """
+    function screenshot() {
+        if (WM.compositor !== "hyprland") {
+            const dir = Config.options.screenSnip.savePath;
+            const cmd = dir !== ""
+                ? `mkdir -p '${dir}' && f='${dir}/screenshot-'$(date '+%Y-%m-%d_%H.%M.%S')'.png' && spectacle -r -b -n -o "$f" && wl-copy --type image/png < "$f" && notify-send "Screenshot" "Saved and copied" -a "Screen Snip" -i "$f"`
+                : `f=$(mktemp --suffix=.png) && spectacle -r -b -n -o "$f" && wl-copy --type image/png < "$f" && rm -f "$f" && notify-send "Screenshot" "Copied to clipboard" -a "Screen Snip" -i "image-x-generic"`;
+            Quickshell.execDetached(["bash", "-c", cmd]);
+            return;
+        }
+        if (Persistent.states.record.enable) {"""),
+    ("modules/ii/regionSelector/RegionSelector.qml",
+     """
+    function record() {
+        if (Persistent.states.record.enable) {""",
+     """
+    function record() {
+        if (WM.compositor !== "hyprland") {
+            Quickshell.execDetached(["spectacle", "-R", "region"]);
+            return;
+        }
+        if (Persistent.states.record.enable) {"""),
+    ("modules/ii/regionSelector/RegionSelector.qml",
+     """
+    function recordWithSound() {
+        if (Persistent.states.record.enable) {""",
+     """
+    function recordWithSound() {
+        if (WM.compositor !== "hyprland") {
+            Quickshell.execDetached(["spectacle", "-R", "region"]);
+            return;
+        }
+        if (Persistent.states.record.enable) {"""),
+
     # --- tray menu: scroll a menu taller than the screen ----------------------
     # Nothing clamped the popup and nothing scrolled inside it, so an app with
     # more entries than the screen is tall put the rest below the bottom edge
