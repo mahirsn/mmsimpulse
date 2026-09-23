@@ -113,3 +113,24 @@ workspace.windowAdded.connect(w => { track(w); push(); });
 workspace.windowRemoved.connect(push);
 workspace.windowActivated.connect(push);
 workspace.currentDesktopChanged.connect(push);
+
+// Super+H: hide the active window from screen sharing and recording (KWin's
+// "exclude from capture"), and show it again. Registered here rather than as a
+// .desktop shortcut because only a script can reach the window property.
+registerShortcut("mmsimpulse: Hide window from screen capture",
+                 "mmsimpulse: Hide the active window from screen sharing and recording",
+                 "Meta+H", function () {
+    const w = workspace.activeWindow;
+    if (w)
+        w.excludeFromCapture = !w.excludeFromCapture;
+});
+
+// Ctrl+Alt+1..6: text consoles, for keyboards whose F-row sends media keys and
+// so never produce the Ctrl+Alt+F-keys KWin switches on by itself.
+for (let n = 1; n <= 6; n++) {
+    registerShortcut("mmsimpulse: Switch to text console " + n,
+                     "mmsimpulse: Switch to text console " + n,
+                     "Ctrl+Alt+" + n, function () {
+        callDBus(SERVICE, PATH, IFACE, "SwitchToConsole", String(n));
+    });
+}

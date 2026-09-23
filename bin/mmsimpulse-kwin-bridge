@@ -291,6 +291,18 @@ class Bridge(dbus.service.Object):
             print(f"[bridge] KWin unreachable: {exc}", file=sys.stderr, flush=True)
             return "{}"
 
+    @dbus.service.method(BUS_NAME, in_signature="s", out_signature="")
+    def SwitchToConsole(self, vt):
+        """Ctrl+Alt+N from the KWin script. KWin switches consoles itself on
+        Ctrl+Alt+F-keys, but keyboards whose F-row sends media keys by default
+        never produce those. logind allows the switch to the active session."""
+        try:
+            dbus.SystemBus().call_blocking(
+                "org.freedesktop.login1", "/org/freedesktop/login1/seat/seat0",
+                "org.freedesktop.login1.Seat", "SwitchTo", "u", [dbus.UInt32(int(vt))])
+        except (dbus.DBusException, ValueError) as exc:
+            print(f"[bridge] console {vt}: {exc}", file=sys.stderr, flush=True)
+
     @dbus.service.method(BUS_NAME, in_signature="sss", out_signature="")
     def WindowAction(self, window_uuid, action, value):
         try:

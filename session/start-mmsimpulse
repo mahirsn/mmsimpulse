@@ -117,6 +117,14 @@ fi
 # fail and takes every shortcut down with it.
 systemctl --user stop plasma-kglobalaccel.service 2>/dev/null
 pkill -x kglobalacceld 2>/dev/null
+# The name can also still belong to the compositor of the session that just
+# ended, which takes a moment to exit. KWin tries to register it once, at
+# startup, and on failure runs with no global shortcuts at all -- every Super
+# key dead until the next login. So wait for the name to be free.
+for _ in $(seq 1 40); do
+    busctl --user status org.kde.kglobalaccel >/dev/null 2>&1 || break
+    sleep 0.25
+done
 
 # The display manager forks this script before logind has finished registering
 # the login session, so a compositor started right away is left outside

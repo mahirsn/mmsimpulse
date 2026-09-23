@@ -275,7 +275,8 @@ SPECIFIC = [
         id: grab"""),
     ("services/GlobalFocusGrab.qml",
      """active: WM.compositor === "hyprland" && root.dismissable.length > 0""",
-     """active: root.dismissable.length > 0"""),
+     """active: root.dismissable.length > 0
+        holes: [...root.dismissable, ...root.persistent]"""),
     ("modules/ii/bar/SysTray.qml",
      """    HyprlandFocusGrab {
         id: focusGrab""",
