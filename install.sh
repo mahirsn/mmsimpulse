@@ -185,6 +185,13 @@ org.freedesktop.impl.portal.Secret=kwallet
 PORTAL
 fi
 
+# The screenshot button hands over to Spectacle; with accept-on-release the
+# picture is taken when the mouse is let go, instead of waiting for an Accept
+# click after every selection. A value the user already set is left alone.
+if [[ -z "$(kreadconfig6 --file spectaclerc --group General --key useReleaseToCapture 2>/dev/null)" ]]; then
+    kwriteconfig6 --file spectaclerc --group General --key useReleaseToCapture true
+fi
+
 # --- shortcuts -------------------------------------------------------------
 "$REPO/shortcuts/install-shortcuts.sh"
 # Super+1..0 for workspaces is what the shell's own workspace widgets promise.
