@@ -98,6 +98,79 @@ kw kwin "Window One Desktop to the Right" "Meta+Shift+Right,Meta+Ctrl+Shift+Righ
 
 kbuildsycoca6 --noincremental >/dev/null 2>&1 || true
 
+# A running kglobalacceld keeps its own copy and writes it back over the file,
+# so the file alone only takes effect after a fresh login -- and was undone
+# before that more than once. Tell the running daemon too.
+#
+# KWin hands kglobalaccel the character a key produces, with Shift already
+# applied: Super+Shift+2 arrives as Super+@ on a US layout and as Super+' on a
+# Turkish one, so "Meta+Shift+2" alone never fires. The keys are therefore
+# worked out from the configured layouts (kxkbrc), level 1 for switching and
+# level 2 for send-and-follow.
+keycodes() {
+    python3 - "$(kreadconfig6 --file kxkbrc --group Layout --key LayoutList 2>/dev/null)" <<'PY'
+import ctypes, ctypes.util, sys
+META, SHIFT, ALT = 0x10000000, 0x02000000, 0x08000000
+x = ctypes.CDLL(ctypes.util.find_library("xkbcommon"))
+class Names(ctypes.Structure):
+    _fields_ = [(f, ctypes.c_char_p) for f in ("rules", "model", "layout", "variant", "options")]
+x.xkb_context_new.restype = ctypes.c_void_p
+x.xkb_keymap_new_from_names.restype = ctypes.c_void_p
+x.xkb_keymap_new_from_names.argtypes = [ctypes.c_void_p, ctypes.POINTER(Names), ctypes.c_int]
+x.xkb_keymap_key_get_syms_by_level.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
+                                               ctypes.c_uint32, ctypes.POINTER(ctypes.POINTER(ctypes.c_uint32))]
+x.xkb_keysym_to_utf32.restype = ctypes.c_uint32
+ctx = x.xkb_context_new(0)
+
+def qt(ch):                      # Qt key codes are the upper-case character
+    return ord(ch.upper()) if len(ch.upper()) == 1 else ord(ch)
+
+layouts = [l for l in sys.argv[1].split(",") if l] or ["us"]
+switch, follow = [[] for _ in range(10)], [[] for _ in range(10)]
+for lay in layouts:
+    km = x.xkb_keymap_new_from_names(ctx, ctypes.byref(Names(None, None, lay.encode(), None, None)), 0)
+    if not km:
+        continue
+    for i in range(10):                     # evdev KEY_1..KEY_0 are 2..11
+        for level, into in ((0, switch), (1, follow)):
+            p = ctypes.POINTER(ctypes.c_uint32)()
+            if x.xkb_keymap_key_get_syms_by_level(km, i + 2 + 8, 0, level, ctypes.byref(p)):
+                c = x.xkb_keysym_to_utf32(p[0])
+                if c and qt(chr(c)) not in into[i]:
+                    into[i].append(qt(chr(c)))
+for i in range(10):
+    n = i + 1
+    s = switch[i]
+    f = [k for k in follow[i] if k not in s]
+    print(f"kwin\tSwitch to Desktop {n}\t" + " ".join(str(META + k) for k in s))
+    print(f"kwin\tWindow to Desktop {n}\t" + " ".join(str(META + ALT + k) for k in s))
+    print(f"mmsimpulse-workspace{n}.desktop\t_launch\t" + " ".join(str(META + k) for k in f))
+PY
+}
+META=$((0x10000000)); SHIFT=$((0x02000000))
+LEFT=$((0x01000012)); RIGHT=$((0x01000014))
+live() {    # live COMPONENT ACTION [QT_KEY...]
+    local c=$1 a=$2 keys=() k
+    shift 2
+    keys=($#)
+    for k in "$@"; do keys+=(4 "$k" 0 0 0); done
+    busctl --user call org.kde.kglobalaccel /kglobalaccel org.kde.KGlobalAccel \
+        setForeignShortcutKeys 'asa(ai)' 4 "$c" "$a" "" "" "${keys[@]}" >/dev/null 2>&1 || true
+}
+if busctl --user status org.kde.kglobalaccel >/dev/null 2>&1; then
+    for n in 1 2 3 4 5 6 7 8 9 0; do
+        live plasmashell "activate task manager entry $n"
+    done
+    live kwin "Swap Tiled Window Left"
+    live kwin "Swap Tiled Window Right"
+    while IFS=$'\t' read -r comp action codes; do
+        # shellcheck disable=SC2086
+        live "$comp" "$action" $codes
+    done < <(keycodes)
+    live kwin "Window One Desktop to the Left" $((META + SHIFT + LEFT))
+    live kwin "Window One Desktop to the Right" $((META + SHIFT + RIGHT))
+fi
+
 cat <<MSG
 Workspace keys installed:
 
@@ -109,5 +182,5 @@ Workspace keys installed:
 
 Existing bindings are only rewritten where they were dead: plasmashell's task
 manager entries (plasmashell never runs here) and the tiling swaps (tiling is
-off). Log out and back in for kglobalacceld to pick all of this up.
+off). They work right away.
 MSG

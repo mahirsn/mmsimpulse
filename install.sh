@@ -187,6 +187,8 @@ fi
 
 # --- shortcuts -------------------------------------------------------------
 "$REPO/shortcuts/install-shortcuts.sh"
+# Super+1..0 for workspaces is what the shell's own workspace widgets promise.
+"$REPO/shortcuts/install-workspace-keys.sh" >/dev/null
 
 cat <<MSG
 
