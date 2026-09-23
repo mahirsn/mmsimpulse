@@ -211,6 +211,13 @@ if ! busctl --user status org.kde.kglobalaccel >/dev/null 2>&1; then
     [[ -n "$KGA" ]] && nohup "$KGA" >>"$LOG" 2>&1 &
 fi
 
+# Without plasmashell there is no Klipper, so whatever a program copies is
+# gone the moment that program exits -- Spectacle's Copy button, a terminal
+# closed after copying, and so on. wl-clip-persist takes the content over.
+if command -v wl-clip-persist >/dev/null && ! pgrep -x wl-clip-persist >/dev/null; then
+    nohup wl-clip-persist --clipboard regular >>"$LOG" 2>&1 &
+fi
+
 # Wine programs — Wallpaper Engine among them — still put their tray icon in
 # the X11 XEmbed tray, which no Wayland bar can show: the bar speaks
 # StatusNotifierItem. Plasma bridges the two with this proxy, and with no

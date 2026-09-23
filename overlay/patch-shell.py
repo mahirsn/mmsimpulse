@@ -429,12 +429,13 @@ import Quickshell.Io
                     text: Translation.tr("Bar style")"""),
 
     # --- which program takes the picture -------------------------------------
-    # The shell's own selector reads the screen over wlr-screencopy, which KWin
-    # does not implement: it froze nothing and saved nothing. Spectacle ships
-    # with KDE, does regions and records, and is the default here. The tool is a
-    # setting because the right answer differs per machine -- gpu-screen-recorder
-    # is far lighter for long captures, OBS is what someone already streaming
-    # wants, and the built-in one is correct again on Hyprland.
+    # Screenshots default to the shell's own selector: its frozen frame now
+    # comes from mmsimpulse-screenshot on KWin, and one drag saves and copies.
+    # Spectacle asks for an extra Accept after every selection. Recording stays
+    # with Spectacle, because the shell's recorder reads the screen over
+    # wlr-screencopy, which KWin does not implement. Both are settings: the
+    # right answer differs per machine -- gpu-screen-recorder is far lighter for
+    # long captures and OBS is what someone already streaming wants.
     ("modules/common/Config.qml",
      """            property JsonObject screenRecord: JsonObject {
                 property string savePath: Directories.videos.replace("file://","") // strip "file://"
@@ -451,8 +452,8 @@ import Quickshell.Io
 
             property JsonObject screenSnip: JsonObject {
                 property string savePath: "" // only copy to clipboard when empty
-                // spectacle | flameshot | shell
-                property string tool: "spectacle"
+                // shell | spectacle | flameshot
+                property string tool: "shell"
             }"""),
 
     ("modules/ii/regionSelector/RegionSelector.qml",
@@ -547,9 +548,9 @@ import Quickshell.Io
                     currentValue: Config.options.screenSnip.tool
                     onSelected: newValue => { Config.options.screenSnip.tool = newValue; }
                     options: page.availableTools([
+                        { displayName: Translation.tr("Built-in"), icon: "crop", value: "shell" },
                         { displayName: Translation.tr("Spectacle"), icon: "photo_camera", value: "spectacle" },
-                        { displayName: Translation.tr("Flameshot"), icon: "brush", value: "flameshot" },
-                        { displayName: Translation.tr("Built-in"), icon: "crop", value: "shell" }
+                        { displayName: Translation.tr("Flameshot"), icon: "brush", value: "flameshot" }
                     ])
                 }
 
