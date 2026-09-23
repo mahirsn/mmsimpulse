@@ -259,37 +259,32 @@ SPECIFIC = [
                 }
             }"""),
 
-    # --- dismiss a panel when the click went elsewhere ------------------------
-    # hyprland-focus-grab-v1 is what closes these panels on Hyprland, and KWin
-    # implements nothing like it, so the shell disables the grab there and the
-    # panels then stay open until Escape or the key that opened them. What KWin
-    # does report is which window holds focus, and a panel losing the user to
-    # another window is the case people actually hit. Layer surfaces are not in
-    # that list, so opening a panel cannot trip it.
-    #
-    # ponytail: a click on bare desktop focuses nothing and so does not dismiss.
-    # Covering that needs an input surface beneath the panels, which is a change
-    # to the panels rather than to this singleton.
+    # --- close panels and menus on a click elsewhere ------------------------
+    # The shell used Quickshell's HyprlandFocusGrab directly. KWin implements no
+    # hyprland-focus-grab-v1, so `cleared` never fired there and every sidebar,
+    # tray menu and overlay stayed open until Escape. CompositorFocusGrab keeps
+    # the same interface, uses the real grab on Hyprland, and on KWin combines a
+    # focus change with a click catcher (see that file). Tray menus are xdg
+    # popups, which KWin stacks above everything, so their catcher goes on Top
+    # and also sees clicks on the window that was already focused -- the case a
+    # focus change alone never reports.
     ("services/GlobalFocusGrab.qml",
      """    HyprlandFocusGrab {
         id: grab""",
-     """    property string lastFocused: ""
-
-    Connections {
-        target: WM
-        enabled: WM.compositor !== "hyprland"
-        function onWindowListChanged() {
-            const now = WM.windowList.find(w => w.focused)?.address ?? "";
-            if (now === root.lastFocused)
-                return;
-            root.lastFocused = now;
-            if (now !== "" && root.dismissable.length > 0)
-                root.dismiss();
-        }
-    }
-
-    HyprlandFocusGrab {
+     """    CompositorFocusGrab {
         id: grab"""),
+    ("services/GlobalFocusGrab.qml",
+     """active: WM.compositor === "hyprland" && root.dismissable.length > 0""",
+     """active: root.dismissable.length > 0"""),
+    ("modules/ii/bar/SysTray.qml",
+     """    HyprlandFocusGrab {
+        id: focusGrab""",
+     """    CompositorFocusGrab {
+        id: focusGrab
+        catcherLayer: WlrLayer.Top"""),
+    ("modules/ii/overlay/Overlay.qml",
+     """HyprlandFocusGrab {""",
+     """CompositorFocusGrab {"""),
 
     # A Flow only wraps inside a width it was given, and with a label present this
     # was handed none -- every selection row ran off the edge of the page in one
@@ -322,9 +317,9 @@ import Quickshell.Io
     Process {
         running: true
         command: ["bash", "-c",
-            "for t in spectacle flameshot gpu-screen-recorder obs; do command -v  >/dev/null && echo ; done"]
+            "for t in spectacle flameshot gpu-screen-recorder obs; do command -v $t >/dev/null && echo $t; done"]
         stdout: StdioCollector {
-            onStreamFinished: page.installedTools = text.trim().split("\n").filter(t => t.length > 0)
+            onStreamFinished: page.installedTools = text.trim().split("\\n").filter(t => t.length > 0)
         }
     }
     function availableTools(list) {
@@ -421,16 +416,16 @@ import Quickshell.Io
     implicitHeight: Appearance.sizes.barHeight"""),
 
     ("modules/ii/settings/pages/BarConfig.qml",
-     """                    ConfigSelectionArray {
-                        text: Translation.tr("Bar style")""",
-     """                    ConfigSwitch {
-                        text: Translation.tr("Hug when fullscreen")
-                        enabled: Config.options.bar.cornerStyle !== 0
-                        checked: Config.options.bar.hugWhenFullscreen
-                        onCheckedChanged: { Config.options.bar.hugWhenFullscreen = checked; }
-                    }
-                    ConfigSelectionArray {
-                        text: Translation.tr("Bar style")"""),
+     """                ConfigSelectionArray {
+                    text: Translation.tr("Bar style")""",
+     """                ConfigSwitch {
+                    text: Translation.tr("Hug when a window is maximised")
+                    enabled: Config.options.bar.cornerStyle !== 0
+                    checked: Config.options.bar.hugWhenFullscreen
+                    onCheckedChanged: { Config.options.bar.hugWhenFullscreen = checked; }
+                }
+                ConfigSelectionArray {
+                    text: Translation.tr("Bar style")"""),
 
     # --- which program takes the picture -------------------------------------
     # The shell's own selector reads the screen over wlr-screencopy, which KWin
@@ -938,7 +933,8 @@ IMPORT = "import qs.services"
 # leaves root.QsWindow undefined, the binding throws rather than falling back,
 # and the widget renders with no colour at all -- which is how this first
 # shipped.
-NEEDED = (("WM.", IMPORT), ("BarStyle.", IMPORT), ("QsWindow", "import Quickshell"))
+NEEDED = (("WM.", IMPORT), ("BarStyle.", IMPORT), ("CompositorFocusGrab", IMPORT),
+          ("QsWindow", "import Quickshell"), ("WlrLayer.", "import Quickshell.Wayland"))
 
 
 def ensure_import(text):
