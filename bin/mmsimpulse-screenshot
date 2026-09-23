@@ -23,12 +23,10 @@ import json
 import os
 import subprocess
 import sys
-import urllib.parse
 import tempfile
 
 import dbus
 
-PORTAL_TIMEOUT_MS = 15000
 SERVICE = "org.kde.KWin.ScreenShot2"
 PATH = "/org/kde/KWin/ScreenShot2"
 
@@ -86,79 +84,6 @@ def crop_args(output_name, geometry):
     return args
 
 
-def portal_capture(output_name, target, geometry):
-    """Whole workspace through the desktop portal, cropped to one output.
-
-    KWin's own ScreenShot2 answers "not authorized to take a screenshot" to any
-    caller without a desktop entry declaring the interface. This is a script, so
-    the executable KWin sees is the interpreter, and authorising that would
-    authorise every Python program on the machine. The portal is the same
-    capability by a route meant to be called by anyone, and
-    xdg-desktop-portal-kde already serves the colour picker here.
-
-    It goes ahead of spectacle because spectacle is the one that fails in the
-    case that matters: the region selector captures its frozen frame after its
-    own fullscreen overlay is already up, and spectacle returns nothing then.
-    """
-    import dbus.mainloop.glib
-    from gi.repository import GLib
-
-    # A private connection with its own main loop: main() has already made the
-    # default SessionBus without one, and dbus caches that, so setting a default
-    # loop here would be ignored and every signal lost.
-    bus = dbus.SessionBus(private=True,
-                          mainloop=dbus.mainloop.glib.DBusGMainLoop())
-    loop = GLib.MainLoop()
-    result = {}
-
-    def on_response(response, results):
-        result["response"] = int(response)
-        result["uri"] = results.get("uri")
-        loop.quit()
-
-    bus.add_signal_receiver(
-        on_response, signal_name="Response",
-        dbus_interface="org.freedesktop.portal.Request")
-    try:
-        iface = dbus.Interface(
-            bus.get_object("org.freedesktop.portal.Desktop",
-                           "/org/freedesktop/portal/desktop"),
-            "org.freedesktop.portal.Screenshot")
-        iface.Screenshot("", {"interactive": dbus.Boolean(False)})
-    except dbus.DBusException as exc:
-        sys.stderr.write("portal Screenshot failed: %s\n" % exc.get_dbus_message())
-        return 1
-
-    GLib.timeout_add(PORTAL_TIMEOUT_MS, loop.quit)
-    loop.run()
-
-    uri = result.get("uri")
-    if result.get("response") != 0 or not uri:
-        sys.stderr.write("portal Screenshot returned nothing\n")
-        return 1
-
-    shot = urllib.parse.unquote(urllib.parse.urlparse(str(uri)).path)
-    try:
-        out = "png:-" if target == "-" else "png:%s" % target
-        argv = ["magick", shot]
-        if geometry:
-            argv += crop_args(output_name, geometry)
-        argv.append(out)
-        crop = subprocess.run(argv, capture_output=(target != "-"))
-        if crop.returncode:
-            if crop.stderr:
-                sys.stderr.write(crop.stderr.decode()[:300])
-            return 1
-    finally:
-        # The portal writes into the picture directory, so a capture left behind
-        # is a file in the user's Pictures for every frame the selector freezes.
-        try:
-            os.unlink(shot)
-        except OSError:
-            pass
-    return 0
-
-
 def spectacle_capture(output_name, target, geometry):
     """Whole workspace through spectacle, cropped to one output."""
     with tempfile.TemporaryDirectory() as tmp:
@@ -205,8 +130,7 @@ def main():
     except dbus.DBusException:
         os.close(read_fd)
         os.close(write_fd)
-        rc = portal_capture(output_name, target, geometry)
-        return rc if rc == 0 else spectacle_capture(output_name, target, geometry)
+        return spectacle_capture(output_name, target, geometry)
     # The compositor holds its own copy now; ours has to go or the read blocks
     # forever waiting for an end that never comes.
     os.close(write_fd)
