@@ -605,6 +605,26 @@ SPECIFIC = [
             return h;
         }"""),
 
+    # --- conflict check -----------------------------------------------------
+    # The session runs kded6 for its Bluetooth and Wi-Fi agents and media keys.
+    # It also claims org.kde.StatusNotifierWatcher, so whenever the shell
+    # (re)starts after it, kded6 holds the tray's name. Killing kded6 over that,
+    # as the skin offers to, takes the agents with it. Instead stop it until the
+    # shell has picked the name up, then start it again: a plain restart is
+    # quicker than the shell and takes the name straight back.
+    ("services/ConflictKiller.qml",
+     'command: ["bash", "-c", `echo "$(pidof kded6);$(pidof mako dunst)"`]',
+     'command: ["bash", "-c", `echo "$(busctl --user status org.kde.StatusNotifierWatcher 2>/dev/null | grep -qx Comm=kded6 && pidof kded6);$(pidof mako dunst)"`]'),
+    ("services/ConflictKiller.qml",
+     """                if (conflictingTrays) {
+                    if""",
+     """                if (conflictingTrays && WM.compositor !== "hyprland") {
+                    Quickshell.execDetached(["bash", "-c", "systemctl --user stop plasma-kded6.service; "
+                        + "for _ in $(seq 40); do busctl --user status org.kde.StatusNotifierWatcher 2>/dev/null "
+                        + "| grep -q '^Comm=qs' && break; sleep 0.25; done; systemctl --user start plasma-kded6.service"])
+                } else if (conflictingTrays) {
+                    if"""),
+
     # --- taskbar ------------------------------------------------------------
     # Same ToplevelManager gap as the overview: the dock's list of running apps
     # comes out empty on KWin. The dock only needs appId, activated and

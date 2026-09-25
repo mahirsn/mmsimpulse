@@ -211,6 +211,16 @@ if ! busctl --user status org.kde.kglobalaccel >/dev/null 2>&1; then
     [[ -n "$KGA" ]] && nohup "$KGA" >>"$LOG" 2>&1 &
 fi
 
+# Plasma starts kded6 itself; here nothing did. Its modules are what answer
+# BlueZ and NetworkManager when they need the user: without the bluedevil agent
+# a new Bluetooth device drops the moment it tries to pair ("Authentication
+# attempt without agent"), and without the networkmanagement agent nothing asks
+# for a Wi-Fi password. The media keys (its mediacontrol component) were dead
+# too. Through its unit, so it is restarted if it crashes. kded6 also claims
+# the tray's org.kde.StatusNotifierWatcher; the shell takes that back when it
+# starts (see ConflictKiller in overlay/patch-shell.py).
+systemctl --user start plasma-kded6.service 2>/dev/null
+
 # Without plasmashell there is no Klipper, so whatever a program copies is
 # gone the moment that program exits -- Spectacle's Copy button, a terminal
 # closed after copying, and so on. wl-clip-persist takes the content over.
