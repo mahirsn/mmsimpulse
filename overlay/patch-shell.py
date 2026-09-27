@@ -369,6 +369,21 @@ SPECIFIC = [
      """                    ? 0 : Config.options.bar.cornerStyle
                 onEffectiveCornerStyleChanged: BarStyle.publish(barRoot.screen?.name, barRoot.effectiveCornerStyle)"""),
 
+    # The edge the bar is not anchored to gets 1 instead of 0. Layer shell
+    # ignores margins on an unanchored edge, so this moves nothing; it only keeps
+    # the margins from ever being all zero. Quickshell diffs each change against
+    # an all-zero default instead of what it sent when it made the surface, so a
+    # bar made floating (top margin 5) that hugs before anything else changes
+    # sends no margin at all -- and stays 5px down with wallpaper showing above
+    # it, which is what starting the shell with a maximised window did.
+    ("modules/ii/bar/Bar.qml",
+     """                    top: barRoot.effectiveCornerStyle === 3 ? 5 : 0
+                    right: (Config.options.interactions.deadPixelWorkaround.enable && barRoot.anchors.right) * -1
+                    bottom: (Config.options.interactions.deadPixelWorkaround.enable && barRoot.anchors.bottom) * -1 || barRoot.effectiveCornerStyle === 3 ? 5 : 0""",
+     """                    top: Config.options.bar.bottom ? 1 : (barRoot.effectiveCornerStyle === 3 ? 5 : 0)
+                    right: (Config.options.interactions.deadPixelWorkaround.enable && barRoot.anchors.right) * -1
+                    bottom: !Config.options.bar.bottom ? 1 : ((Config.options.interactions.deadPixelWorkaround.enable && barRoot.anchors.bottom) * -1 || barRoot.effectiveCornerStyle === 3 ? 5 : 0)"""),
+
     ("modules/ii/bar/BarContent.qml",
      """Item {
     id: root
