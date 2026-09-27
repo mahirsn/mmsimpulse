@@ -31,20 +31,23 @@ Item {
     // about the keyboard's height -- in the same box it would come out thin.
     readonly property int logoSize: Appearance.font.pixelSize.large - (dgpu ? 5 : 6)
 
-    visible: mode >= 0
+    visible: mode >= 0 && Config.options.bar.utilButtons.showGpuModeToggle
     implicitWidth: button.item?.implicitWidth ?? 0
     implicitHeight: button.item?.implicitHeight ?? 0
 
     readonly property string gfx: "busctl --system call org.supergfxctl.Daemon /org/supergfxctl/Gfx org.supergfxctl.Daemon"
 
-    // Only on an AMD CPU with an NVIDIA dGPU behind a MUX supergfxd can flip —
+    // Only on an AMD CPU with an NVIDIA dGPU behind a MUX supergfxd can flip --
     // the two logos are the whole button, and any other pair would be a lie.
-    // In dGPU mode supergfxd lists AsusMuxDgpu alone, so the check still holds.
+    // In dGPU mode supergfxd lists AsusMuxDgpu alone, so that check still
+    // holds; its Vendor does not (it answers "AMD" there), so the NVIDIA card
+    // is looked for on the PCI bus instead: vendor 10de, display class.
     Process {
         running: true
         command: ["bash", "-c", `
             grep -qm1 AuthenticAMD /proc/cpuinfo || exit 1
-            [ "$(${root.gfx} Vendor 2>/dev/null)" = 's "Nvidia"' ] || exit 1
+            grep -lx 0x10de /sys/bus/pci/devices/*/vendor 2>/dev/null | sed 's/vendor$/class/' \
+                | xargs -r grep -qx '0x03.*' || exit 1
             set -- $(${root.gfx} Supported); shift 2
             case " $* " in *" ${root.muxDgpu} "*) ;; *) exit 1 ;; esac
             ${root.gfx} Mode | cut -d' ' -f2`]
