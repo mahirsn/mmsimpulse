@@ -408,11 +408,16 @@ SPECIFIC = [
      """
     function screenshot() {
         if (WM.compositor !== "hyprland") {
+            // The save path is a setting: it goes to bash as an argument ($1),
+            // never into the script text, so no character in it can run as code.
             const dir = Config.options.screenSnip.savePath;
-            const cmd = dir !== ""
-                ? `mkdir -p '${dir}' && f='${dir}/screenshot-'$(date '+%Y-%m-%d_%H.%M.%S')'.png' && spectacle -r -b -n -o "$f" && wl-copy --type image/png < "$f" && notify-send "Screenshot" "Saved and copied" -a "Screen Snip" -i "$f"`
-                : `f=$(mktemp --suffix=.png) && spectacle -r -b -n -o "$f" && wl-copy --type image/png < "$f" && rm -f "$f" && notify-send "Screenshot" "Copied to clipboard" -a "Screen Snip" -i "image-x-generic"`;
-            Quickshell.execDetached(["bash", "-c", cmd]);
+            if (dir !== "")
+                Quickshell.execDetached(["bash", "-c",
+                    'mkdir -p "$1" && f="$1/screenshot-$(date +%Y-%m-%d_%H.%M.%S).png" && spectacle -r -b -n -o "$f" && wl-copy --type image/png < "$f" && notify-send "Screenshot" "Saved and copied" -a "Screen Snip" -i "$f"',
+                    "screenshot", dir]);
+            else
+                Quickshell.execDetached(["bash", "-c",
+                    'f=$(mktemp --suffix=.png) && spectacle -r -b -n -o "$f" && wl-copy --type image/png < "$f" && rm -f "$f" && notify-send "Screenshot" "Copied to clipboard" -a "Screen Snip" -i "image-x-generic"']);
             return;
         }
         if (Persistent.states.record.enable) {"""),
