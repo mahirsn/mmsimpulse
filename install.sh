@@ -108,11 +108,8 @@ rm -rf "$STAGE"
 mkdir -p "$STAGE"
 rsync -a --exclude '.git' "$SHELL_SRC/" "$STAGE/"
 cp "$REPO"/overlay/services/*.qml "$STAGE/services/"
-# The bar overlay is optional — there is nothing in it right now, and a glob
-# that matches nothing would abort the install under `set -e`.
-if compgen -G "$REPO/overlay/bar/*.qml" >/dev/null; then
-    cp "$REPO"/overlay/bar/*.qml "$STAGE/modules/ii/bar/"
-fi
+cp "$REPO"/overlay/bar/*.qml "$STAGE/modules/ii/bar/"
+cp "$REPO"/overlay/icons/*.svg "$STAGE/assets/icons/"
 cp "$REPO"/overlay/sidebarLeft/*.qml "$STAGE/modules/ii/sidebarLeft/"
 mkdir -p "$STAGE/scripts/kwin"
 cp "$REPO"/kwin-script/*.js "$STAGE/scripts/kwin/"
