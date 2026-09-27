@@ -172,8 +172,8 @@ Item {
                 WindowDialogParagraph {
                     Layout.fillWidth: true
                     text: (root.dgpu
-                        ? Translation.tr("The screen goes back to the AMD GPU, and NVIDIA only wakes up for apps that ask for it. Uses less battery.")
-                        : Translation.tr("The screen is driven by the NVIDIA GPU directly, so games skip the copy to the AMD GPU. Uses more battery."))
+                        ? Translation.tr("Switches from discrete GPU only back to Hybrid mode.")
+                        : Translation.tr("Switches from Hybrid mode to discrete GPU only."))
                         + "\n\n" + Translation.tr("The computer restarts to switch. Unsaved work in open apps will be lost.")
                 }
 
