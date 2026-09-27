@@ -25,8 +25,11 @@ Item {
     readonly property string targetIcon: dgpu ? "amd-symbolic.svg" : "nvidia-symbolic.svg"
     property bool asking: false
     // A Material Symbol leaves padding around its glyph and the logos have
-    // none, so at the symbols' own size they drew visibly bigger.
-    readonly property int logoSize: Appearance.font.pixelSize.large - 4
+    // none, and the symbols next to it are outlines where the logos are solid,
+    // which reads bigger at the same size. Sized by eye against them: the
+    // square AMD logo a little under the 15px symbols, the wide NVIDIA one
+    // about the keyboard's height -- in the same box it would come out thin.
+    readonly property int logoSize: Appearance.font.pixelSize.large - (dgpu ? 5 : 6)
 
     visible: mode >= 0
     implicitWidth: button.item?.implicitWidth ?? 0
