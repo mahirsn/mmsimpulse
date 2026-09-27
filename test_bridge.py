@@ -26,8 +26,20 @@ per_output = bridge.build_snapshot(
     {"outputs": [{"name": "DP-1", "currentDesktop": "u2"},
                  {"name": "DP-2", "currentDesktop": "gone"}]}, desktops, "u1")
 # an unknown per-output desktop falls back to the global current one
-assert per_output["outputs"] == [{"name": "DP-1", "current": 2},
-                                 {"name": "DP-2", "current": 1}]
+assert [(o["name"], o["current"]) for o in per_output["outputs"]] == [("DP-1", 2), ("DP-2", 1)]
+
+# only windows the output is showing make the bar hug: not ones on another
+# desktop, on another output, or minimised
+def hug(windows, current="u1"):
+    o = bridge.build_snapshot({"windows": windows, "outputs": [{"name": "DP-1", "currentDesktop": current}]},
+                              desktops, "u1")["outputs"][0]
+    return o["hasmaximized"], o["hasfullscreen"]
+assert hug([{"output": "DP-1", "desktops": ["u2"], "maximized": True, "fullscreen": True}]) == (False, False)
+assert hug([{"output": "DP-1", "desktops": ["u2"], "maximized": True}], current="u2") == (True, False)
+assert hug([{"output": "DP-1", "desktops": [], "maximized": True}]) == (True, False), "on all desktops"
+assert hug([{"output": "DP-2", "desktops": ["u1"], "maximized": True}]) == (False, False)
+assert hug([{"output": "DP-1", "desktops": ["u1"], "maximized": True, "minimized": True}]) == (False, False)
+assert hug([{"output": "DP-1", "desktops": ["u1"], "fullscreen": True}]) == (False, True)
 
 # position is 0-based on D-Bus, the shell wants Hyprland-style 1-based ids
 assert [w["id"] for w in snap["workspaces"]] == [1, 2]

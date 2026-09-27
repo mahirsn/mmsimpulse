@@ -121,20 +121,27 @@ def build_snapshot(payload, desktops, current_id):
     # Per output as well as per workspace: KWin's virtual desktops are global, so
     # the workspace flag is true on every monitor at once and a fullscreen game
     # on one screen would speak for the other.
-    fullscreen_outputs = {w.get("output", "") for w in payload.get("windows", [])
-                          if w.get("fullscreen")}
-    # Reported apart from fullscreen: a fullscreen window covers the bar, so it
-    # is the maximised one -- which stops at the bar and leaves a gapped design
-    # showing desktop around it -- that the bar actually has to react to.
-    maximized_outputs = {w.get("output", "") for w in payload.get("windows", [])
-                         if w.get("maximized") and not w.get("minimized")}
-    outputs = [
-        {"name": o.get("name", ""),
-         "current": by_uuid.get(o.get("currentDesktop", ""), current),
-         "hasfullscreen": o.get("name", "") in fullscreen_outputs,
-         "hasmaximized": o.get("name", "") in maximized_outputs}
-        for o in payload.get("outputs", [])
-    ]
+    #
+    # Maximised is reported apart from fullscreen: a fullscreen window covers the
+    # bar, so it is the maximised one -- which stops at the bar and leaves a
+    # gapped design showing desktop around it -- that the bar has to react to.
+    #
+    # Only what the output is showing counts. A maximised browser left on
+    # another desktop, or minimised, kept the bar hugged everywhere.
+    def shown(w, name, desk):
+        if w.get("output", "") != name or w.get("minimized"):
+            return False
+        on = [by_uuid[u] for u in w.get("desktops", []) if u in by_uuid]
+        return not on or desk in on
+
+    outputs = []
+    for o in payload.get("outputs", []):
+        name = o.get("name", "")
+        desk = by_uuid.get(o.get("currentDesktop", ""), current)
+        here = [w for w in payload.get("windows", []) if shown(w, name, desk)]
+        outputs.append({"name": name, "current": desk,
+                        "hasfullscreen": any(w.get("fullscreen") for w in here),
+                        "hasmaximized": any(w.get("maximized") for w in here)})
 
     return {
         "windows": windows,
