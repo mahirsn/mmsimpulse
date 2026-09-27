@@ -663,6 +663,41 @@ SPECIFIC = [
      """                        if (entranceWrapper.parent.width > 0)""",
      """                        if (entranceWrapper.parent.width > entranceWrapper.width)"""),
 
+    # A switch for it among the other utility buttons, on by default: the
+    # button hides itself on machines without the MUX anyway.
+    ("modules/common/Config.qml",
+     """                    property bool showPerformanceProfileToggle: false
+""",
+     """                    property bool showPerformanceProfileToggle: false
+                    property bool showGpuModeToggle: true
+"""),
+    ("modules/ii/settings/pages/BarConfig.qml",
+     """                    ConfigSwitch {
+                        buttonIcon: "imagesmode"
+                        text: Translation.tr("Wallpapers Toggle")
+                        checked: Config.options.bar.utilButtons.showWallpaperToggle
+                        onCheckedChanged: { Config.options.bar.utilButtons.showWallpaperToggle = checked }
+                    }
+                }
+""",
+     """                    ConfigSwitch {
+                        buttonIcon: "imagesmode"
+                        text: Translation.tr("Wallpapers Toggle")
+                        checked: Config.options.bar.utilButtons.showWallpaperToggle
+                        onCheckedChanged: { Config.options.bar.utilButtons.showWallpaperToggle = checked }
+                    }
+                }
+                ConfigRow {
+                    uniform: true
+                    ConfigSwitch {
+                        buttonIcon: "memory"
+                        text: Translation.tr("GPU switch (ASUS MUX)")
+                        checked: Config.options.bar.utilButtons.showGpuModeToggle
+                        onCheckedChanged: { Config.options.bar.utilButtons.showGpuModeToggle = checked }
+                    }
+                }
+"""),
+
     # --- conflict check -----------------------------------------------------
     # The session runs kded6 for its Bluetooth and Wi-Fi agents and media keys.
     # It also claims org.kde.StatusNotifierWatcher, so whenever the shell
