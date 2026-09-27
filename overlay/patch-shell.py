@@ -610,6 +610,31 @@ SPECIFIC = [
             return h;
         }"""),
 
+    # --- GPU MUX -------------------------------------------------------------
+    # Next to the power profile, the other "how hard does this laptop run"
+    # switch. It hides itself on machines without the MUX.
+    ("modules/ii/bar/UtilButtons.qml",
+     """                        case PowerProfile.Performance: return "local_fire_department"
+                    }
+                    iconSize: Appearance.font.pixelSize.large
+                    color: Appearance.colors.colOnLayer2
+                }
+            }
+        }
+""",
+     """                        case PowerProfile.Performance: return "local_fire_department"
+                    }
+                    iconSize: Appearance.font.pixelSize.large
+                    color: Appearance.colors.colOnLayer2
+                }
+            }
+        }
+
+        GpuModeButton {
+            isMaterial: root.isMaterial
+        }
+"""),
+
     # --- conflict check -----------------------------------------------------
     # The session runs kded6 for its Bluetooth and Wi-Fi agents and media keys.
     # It also claims org.kde.StatusNotifierWatcher, so whenever the shell
