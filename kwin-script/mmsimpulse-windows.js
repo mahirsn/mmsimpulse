@@ -35,12 +35,14 @@ function describe(w) {
     };
 }
 
-// KWin's scripting API exposes fullScreen but nothing for maximised, so the
-// window is compared against the area it would fill if it were. clientArea is
-// the supported way to ask that and already accounts for the bar's reserved
-// strip, which is the whole point: a maximised window stops at the bar, and a
-// gapped bar then shows desktop around it.
+// KWin 6.7 exposes maximizeMode (3: both directions), which is the answer.
+// Older builds have nothing for it, so there the window is compared against the
+// area it would fill if it were. That comparison chases its own tail: the bar
+// hugging changes the area, a maximised window on another desktop is not moved
+// to the new area until it is shown, and until then it reads as not maximised.
 function isMaximized(w) {
+    if (w.maximizeMode !== undefined)
+        return w.maximizeMode === 3;
     try {
         const area = workspace.clientArea(KWin.MaximizeArea, w);
         const g = w.frameGeometry;
