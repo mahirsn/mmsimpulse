@@ -650,6 +650,19 @@ SPECIFIC = [
         }
 """),
 
+    # --- right sidebar entrance ---------------------------------------------
+    # The slide-in is measured from the window's width, which off Hyprland is
+    # the whole screen -- but on the first opening the window is only as wide
+    # as the sidebar until the compositor sizes it. The slide then started from
+    # x=0 and swept in across the middle of the screen. Start from the screen's
+    # width and ignore that first, sidebar-wide size.
+    ("modules/ii/sidebarRight/SidebarRight.qml",
+     """                property real cachedParentWidth: sidebarWidth""",
+     """                property real cachedParentWidth: panelWindow.screen?.width ?? sidebarWidth"""),
+    ("modules/ii/sidebarRight/SidebarRight.qml",
+     """                        if (entranceWrapper.parent.width > 0)""",
+     """                        if (entranceWrapper.parent.width > entranceWrapper.width)"""),
+
     # --- conflict check -----------------------------------------------------
     # The session runs kded6 for its Bluetooth and Wi-Fi agents and media keys.
     # It also claims org.kde.StatusNotifierWatcher, so whenever the shell
@@ -863,6 +876,17 @@ WORKSPACE_MODEL = [
                     && (!w.output || w.output === root.monitorName))"""),
 ]
 
+# KWin turns a layer surface's namespace into a window type and knows only its
+# own names, so every "quickshell:*" surface became a normal window. KWin's
+# Scale effect then zoomed each one open like an application window -- the
+# power menu's dimmed backdrop grew out of the middle as if being maximised --
+# on top of the slide or fade the skin already animates itself off Hyprland.
+# "dock" is what Plasma's own panels are: no open or close effect, nothing
+# snaps to them, and show-desktop and the desktop slide leave them in place.
+# The wallpaper stays as it is: the desktop slide draws docks over the windows
+# it moves, which for a wallpaper would cover them.
+LAYER_NAMESPACE = re.compile(r'(WlrLayershell\.namespace:\s*)"quickshell:(?!background"|wallpaper")[^"]*"')
+
 IMPORT = "import qs.services"
 
 # QsWindow is an attached type from Quickshell. A file that never imported it
@@ -927,6 +951,18 @@ def main():
 
     for old, new in WORKSPACE_MODEL:
         apply("modules/common/models/WorkspaceModel.qml", old, new)
+
+    namespace_hits = 0
+    for rel, path in files.items():
+        if not rel.endswith(".qml"):
+            continue
+        text, n = LAYER_NAMESPACE.subn(r'\1"dock"', path.read_text())
+        if n:
+            path.write_text(text)
+            changed.add(rel)
+            namespace_hits += n
+    if namespace_hits == 0:
+        misses.append("no quickshell:* layer namespace found to turn into a dock")
 
     for rel in BAR_STYLE_FILES:
         apply(rel, "Config.options.bar.cornerStyle",
