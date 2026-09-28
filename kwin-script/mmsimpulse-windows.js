@@ -31,9 +31,7 @@ function describe(w) {
         minimized: w.minimized === true,
         fullscreen: w.fullScreen === true,
         maximized: isMaximized(w),
-        keepAbove: w.keepAbove === true,
-        excludeFromCapture: w.excludeFromCapture === true,
-        moving: w.move === true || w.resize === true
+        keepAbove: w.keepAbove === true
     };
 }
 
@@ -105,56 +103,15 @@ function track(w) {
     // maximising is not a drag so it does not flood the way a resize would.
     ["captionChanged", "desktopsChanged", "minimizedChanged", "fullScreenChanged",
      "maximizedChanged", "maximizedModeChanged", "tileChanged",
-     "keepAboveChanged", "outputChanged", "interactiveMoveResizeFinished",
-     "excludeFromCaptureChanged", "moveResizedChanged"]
+     "keepAboveChanged", "outputChanged", "interactiveMoveResizeFinished"]
         .forEach(name => connectIfPresent(w, name));
-    // The shell frames a window hidden from capture, and the frame has to follow
-    // it however it gets resized -- an app resizing itself included. Only for
-    // those windows, and not while dragging: the frame is hidden then, and the
-    // drag would otherwise push a snapshot every frame.
-    if (w.frameGeometryChanged) {
-        w.frameGeometryChanged.connect(() => {
-            if (w.excludeFromCapture && !w.move && !w.resize)
-                push();
-        });
-    }
-}
-
-// The frame the shell draws on a window hidden from capture must itself be
-// hidden from capture, or a screen share shows a coloured outline exactly where
-// the hidden window is. It is a layer surface, which carries no name a script
-// can read, so it is recognised by what it is: a shell dock surface lying
-// exactly on a hidden window. It is drawn inside the window's edge rather than
-// around it so that it never has to reach past the screen, which a maximised
-// window would make it do.
-function isCaptureBorder(w) {
-    if (w.resourceClass !== "quickshell" || !w.dock)
-        return false;
-    const near = (a, b) => Math.abs(a - b) <= 1;
-    return workspace.windowList().some(t => t.excludeFromCapture && t !== w
-        && near(w.x, t.x) && near(w.y, t.y)
-        && near(w.width, t.width) && near(w.height, t.height));
-}
-
-function hideCaptureBorder(w) {
-    if (!w.excludeFromCapture && isCaptureBorder(w))
-        w.excludeFromCapture = true;
 }
 
 // Publish before wiring anything up, so a bad signal name cannot stop the very
 // first snapshot from going out.
 push();
 workspace.windowList().forEach(track);
-workspace.windowAdded.connect(w => {
-    track(w);
-    push();
-    // A layer surface can be mapped before it has its final size, so look again
-    // when it moves or resizes.
-    if (w.resourceClass === "quickshell" && w.dock) {
-        hideCaptureBorder(w);
-        w.frameGeometryChanged.connect(() => hideCaptureBorder(w));
-    }
-});
+workspace.windowAdded.connect(w => { track(w); push(); });
 workspace.windowRemoved.connect(push);
 workspace.windowActivated.connect(push);
 workspace.currentDesktopChanged.connect(push);
