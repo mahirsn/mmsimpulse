@@ -67,6 +67,16 @@ while IFS= read -r line; do
         conflicts+=("$keys ($name)")
     fi
 
+    # An entry installed by an earlier run already has whatever binding the
+    # user left it with, and kglobalshortcutsrc cannot say what that is: the
+    # daemon drops the whole group of an action bound to its own default, and
+    # drops _k_friendly_name from every group it rewrites, so "bound to its
+    # default" and "never registered" read the same there. Deciding again from
+    # the file unbound Meta+J and the like on every install. Whether the
+    # .desktop was already here is the one thing that tells them apart.
+    installed=false
+    [[ -e "$APPDIR/$CONFIG-$name.desktop" ]] && installed=true
+
     # X-KDE-Shortcuts is what makes kglobalacceld notice the entry at all, so
     # it has to carry a key. The binding written below is what decides whether
     # that key is actually live, and it is not.
@@ -88,21 +98,10 @@ DESKTOP
     # The launcher is the one exception. A session with no way to open the
     # launcher has no way to start anything, so it gets Meta+Space — but only
     # if nothing else holds that key.
+    $installed && continue
     entry="$CONFIG-$name.desktop"
     current="$(kreadconfig6 --file kglobalshortcutsrc --group services --group "$entry" \
         --key _launch 2>/dev/null)"
-    known="$(kreadconfig6 --file kglobalshortcutsrc --group services --group "$entry" \
-        --key _k_friendly_name 2>/dev/null)"
-    # A registered entry with no _launch line is not an unbound one. When the
-    # live key equals the default kglobalacceld read from X-KDE-Shortcuts, it
-    # drops the line as redundant — so an absent line means that default is in
-    # effect, and the action is bound. Writing "none" over it took the key away
-    # again on every re-install, which is invisible until you press it. The
-    # friendly name is what separates the two: an entry that was never
-    # registered has neither.
-    if [[ -n "$known" && -z "$current" ]]; then
-        continue
-    fi
     # The live binding is the first comma-separated field. kglobalacceld writes
     # an unbound action as an empty field, not as "none", so both count as
     # "nothing here yet" — otherwise re-running would never bind the launcher.
