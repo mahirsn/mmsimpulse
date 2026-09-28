@@ -698,6 +698,15 @@ SPECIFIC = [
                 }
 """),
 
+    # --- hidden from capture --------------------------------------------------
+    # Super+H hides the active window from screen capture; the frame shows it.
+    ("shell.qml",
+     """    ReloadPopup {}
+""",
+     """    ReloadPopup {}
+    CaptureBorder {}
+"""),
+
     # --- conflict check -----------------------------------------------------
     # The session runs kded6 for its Bluetooth and Wi-Fi agents and media keys.
     # It also claims org.kde.StatusNotifierWatcher, so whenever the shell
