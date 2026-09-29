@@ -525,6 +525,16 @@ import qs.modules.ii.overlay.media"""),
                     property real height: 160
                 }"""),
 
+    # A saved position is in the coordinates of whichever screen the overlay
+    # was on, and nothing brought it back when it opened on a smaller one: a
+    # widget left at x 2130 on the 2048px laptop panel was simply gone on the
+    # 1920px monitor. Dragging was already kept on screen; opening is now too.
+    ("modules/ii/overlay/StyledOverlayWidget.qml",
+     """    x: Math.round(persistentStateEntry.x) // Round or it'll be blurry
+    y: Math.round(persistentStateEntry.y) // Round or it'll be blurry""",
+     """    x: Math.round(Math.max(0, Math.min(persistentStateEntry.x, (root.parent?.width ?? Infinity) - root.width))) // Round or it'll be blurry
+    y: Math.round(Math.max(0, Math.min(persistentStateEntry.y, (root.parent?.height ?? Infinity) - root.height))) // Round or it'll be blurry"""),
+
     # --- tray menu: scroll a menu taller than the screen ----------------------
     # Nothing clamped the popup and nothing scrolled inside it, so an app with
     # more entries than the screen is tall put the rest below the bottom edge
