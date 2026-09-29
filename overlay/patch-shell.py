@@ -542,6 +542,96 @@ import qs.modules.ii.overlay.media"""),
      """        var cmd = updateCommands + "; pkill -SIGUSR2 mangohud";""",
      """        var cmd = "mkdir -p ~/.config/MangoHud; " + updateCommands + "; pkill -SIGUSR2 mangohud";"""),
 
+    # --- night light on KWin ----------------------------------------------------
+    # The service only knew hyprsunset and wlsunset, so on KDE the toggle ran
+    # hyprctl and nothing changed. KWin has its own night light: switched on in
+    # its constant mode at the shell's temperature, the shell's own schedule
+    # still decides when. KWin exposes no gamma control, so gamma stays alone
+    # there as it does on niri.
+    #
+    # Every write notifies: KWin rereads only on a notification, and one is
+    # sent only for a value that changed. With it on Active alone, a new
+    # temperature while night light was already on never reached KWin.
+    ("services/Hyprsunset.qml",
+     """    readonly property bool isNiri: WM.compositor === "niri"
+""",
+     """    readonly property bool isNiri: WM.compositor === "niri"
+    readonly property bool isKwin: WM.compositor === "kde"
+
+    function setKwinNightLight(on, temp) {
+        Quickshell.execDetached(["bash", "-c", `
+            k() { kwriteconfig6 --notify --file kwinrc --group NightColor "$@"; }
+            k --key Mode Constant
+            k --key NightTemperature "$2"
+            k --key Active "$1"`, "night-light", on ? "true" : "false", `${temp}`]);
+    }
+"""),
+    ("services/Hyprsunset.qml",
+     """        if (root.isNiri) return;
+        Quickshell.execDetached(["bash", "-c", `pidof hyprsunset || hyprsunset`]);""",
+     """        if (root.isNiri || root.isKwin) return;
+        Quickshell.execDetached(["bash", "-c", `pidof hyprsunset || hyprsunset`]);"""),
+    # KWin keeps the setting across restarts of the shell, so it is read back
+    # rather than reset.
+    ("services/Hyprsunset.qml",
+     """    function load() {
+""",
+     """    function load() {
+        if (root.isKwin) {
+            root.fetchState();
+            return;
+        }
+"""),
+    ("services/Hyprsunset.qml",
+     """            root.startNiriSunset(root.colorTemperature);
+        } else {""",
+     """            root.startNiriSunset(root.colorTemperature);
+        } else if (root.isKwin) {
+            root.setKwinNightLight(true, root.colorTemperature);
+        } else {"""),
+    ("services/Hyprsunset.qml",
+     """            root.stopNiriSunset();
+        } else {""",
+     """            root.stopNiriSunset();
+        } else if (root.isKwin) {
+            root.setKwinNightLight(false, root.colorTemperature);
+        } else {"""),
+    ("services/Hyprsunset.qml",
+     """        if (root.isNiri) {
+            return;
+        }""",
+     """        if (root.isNiri || root.isKwin) {
+            return;
+        }"""),
+    ("services/Hyprsunset.qml",
+     """            niriFetchProc.running = true;
+        } else {""",
+     """            niriFetchProc.running = true;
+        } else if (root.isKwin) {
+            kwinFetchProc.running = true;
+        } else {"""),
+    ("services/Hyprsunset.qml",
+     """    Process {
+        id: niriFetchProc""",
+     """    Process {
+        id: kwinFetchProc
+        command: ["busctl", "--user", "get-property", "org.kde.KWin", "/org/kde/KWin/NightLight",
+            "org.kde.KWin.NightLight", "enabled"]
+        stdout: StdioCollector {
+            onStreamFinished: root.temperatureActive = text.trim() === "b true"
+        }
+    }
+
+    Process {
+        id: niriFetchProc"""),
+    ("services/Hyprsunset.qml",
+     """                root.startNiriSunset(Config.options.light.night.colorTemperature);
+            } else {""",
+     """                root.startNiriSunset(Config.options.light.night.colorTemperature);
+            } else if (root.isKwin) {
+                root.setKwinNightLight(true, Config.options.light.night.colorTemperature);
+            } else {"""),
+
     # --- tray menu: scroll a menu taller than the screen ----------------------
     # Nothing clamped the popup and nothing scrolled inside it, so an app with
     # more entries than the screen is tall put the rest below the bottom edge
