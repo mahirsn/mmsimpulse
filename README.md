@@ -126,8 +126,9 @@ KWin has no equivalent for — panels close by their own means instead.
   window on another workspace works; dropping it at a position does not.
 - **The overview covers the bar's strip**, because KWin reports no struts.
 - **Hyprland-only settings pages are inert** — animations, `hyprland.conf`
-  editing, monitor layout, hyprsunset. Their KDE equivalents are in System
-  Settings, and night light is `org.kde.KWin.NightLight`.
+  editing, monitor layout. Their KDE equivalents are in System Settings. Night
+  light works, through KWin's own; its gamma slider does nothing, since KWin
+  offers no gamma control.
 - **Right-clicking a tray icon opens no menu.** Quickshell creates the window,
   sizes it, anchors it to the bar and reports it visible, but no Wayland
   surface ever reaches KWin — while a plain `PopupWindow` with the identical
