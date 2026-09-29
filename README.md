@@ -182,6 +182,7 @@ bin/mmsimpulse-kwin-bridge      KWin <-> shell bridge daemon
 kwin-script/                    KWin script that publishes the window list
 overlay/services/               KwinBackend.qml, and WM.qml and
                                 CompositorGlobalShortcut.qml with a KWin branch
+overlay/overlayWidgets/         quick settings and media widgets for the Super+Z overlay
 overlay/bin/noctalia            shim for a fork's built-in shell shortcuts
 overlay/patch-shell.py          scripted edits to the rest of the skin
 session/                        session script and login-manager entry

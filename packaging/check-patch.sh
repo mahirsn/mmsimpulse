@@ -18,6 +18,7 @@ cp "$REPO"/overlay/services/*.qml "$out/services/"
 cp "$REPO"/overlay/bar/*.qml "$out/modules/ii/bar/"
 cp "$REPO"/overlay/icons/*.svg "$out/assets/icons/"
 cp "$REPO"/overlay/sidebarLeft/*.qml "$out/modules/ii/sidebarLeft/"
+cp -r "$REPO"/overlay/overlayWidgets/. "$out/modules/ii/overlay/"
 mkdir -p "$out/scripts/kwin"; cp "$REPO"/kwin-script/*.js "$out/scripts/kwin/"
 python3 "$REPO/overlay/patch-shell.py" "$out"
 
