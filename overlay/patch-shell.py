@@ -477,6 +477,54 @@ SPECIFIC = [
                         else
                             Quickshell.execDetached(["spectacle", "-R", "screen"]);"""),
 
+    # --- overlay: quick settings and media widgets ----------------------------
+    # Two widgets from overlay/overlayWidgets: the sidebar's toggles worth
+    # reaching over a game, and the media popup's player. Each overlay widget
+    # needs a button, a delegate and a saved position. The defaults sit inside
+    # a 1920x1080 screen and clear of the widgets already placed there.
+    ("modules/ii/overlay/OverlayContext.qml",
+     """        { identifier: "volumeMixer", materialSymbol: "volume_up" },""",
+     """        { identifier: "volumeMixer", materialSymbol: "volume_up" },
+        { identifier: "quickSettings", materialSymbol: "toggle_on" },
+        { identifier: "media", materialSymbol: "music_note" },"""),
+    ("modules/ii/overlay/OverlayWidgetDelegateChooser.qml",
+     """import qs.modules.ii.overlay.notes""",
+     """import qs.modules.ii.overlay.notes
+import qs.modules.ii.overlay.quickSettings
+import qs.modules.ii.overlay.media"""),
+    ("modules/ii/overlay/OverlayWidgetDelegateChooser.qml",
+     """    DelegateChoice { roleValue: "volumeMixer"; VolumeMixer {} }""",
+     """    DelegateChoice { roleValue: "volumeMixer"; VolumeMixer {} }
+    DelegateChoice { roleValue: "quickSettings"; QuickSettings {} }
+    DelegateChoice { roleValue: "media"; Media {} }"""),
+    ("modules/common/Persistent.qml",
+     """                    property real x: 1400
+                    property real y: 42
+                    property real width: 460
+                    property real height: 330
+                }""",
+     """                    property real x: 1400
+                    property real y: 42
+                    property real width: 460
+                    property real height: 330
+                }
+                property JsonObject quickSettings: JsonObject {
+                    property bool pinned: false
+                    property bool clickthrough: false
+                    property real x: 450
+                    property real y: 160
+                    property real width: 340
+                    property real height: 194
+                }
+                property JsonObject media: JsonObject {
+                    property bool pinned: false
+                    property bool clickthrough: false
+                    property real x: 450
+                    property real y: 420
+                    property real width: 440
+                    property real height: 160
+                }"""),
+
     # --- tray menu: scroll a menu taller than the screen ----------------------
     # Nothing clamped the popup and nothing scrolled inside it, so an app with
     # more entries than the screen is tall put the rest below the bottom edge
