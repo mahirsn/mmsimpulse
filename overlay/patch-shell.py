@@ -459,6 +459,24 @@ SPECIFIC = [
         }
         if (Persistent.states.record.enable) {"""),
 
+    # The overlay's recorder widget has the same buttons and called the same
+    # wlr-screencopy tools directly: its full-screen shot and screen recording
+    # did nothing on KWin. The region buttons already go through the selector
+    # patched above.
+    ("modules/ii/overlay/recorder/Recorder.qml",
+     """Quickshell.execDetached(["bash", "-c", "grim - | wl-copy"]);""",
+     """if (WM.compositor === "hyprland")
+                            Quickshell.execDetached(["bash", "-c", "grim - | wl-copy"]);
+                        else
+                            Quickshell.execDetached(["bash", "-c",
+                                'f=$(mktemp --suffix=.png) && spectacle -m -b -n -o "$f" && wl-copy --type image/png < "$f" && rm -f "$f" && notify-send "Screenshot" "Copied to clipboard" -a "Screen Snip" -i "image-x-generic"']);"""),
+    ("modules/ii/overlay/recorder/Recorder.qml",
+     """Quickshell.execDetached([Directories.recordScriptPath, "--fullscreen", "--sound"]);""",
+     """if (WM.compositor === "hyprland")
+                            Quickshell.execDetached([Directories.recordScriptPath, "--fullscreen", "--sound"]);
+                        else
+                            Quickshell.execDetached(["spectacle", "-R", "screen"]);"""),
+
     # --- tray menu: scroll a menu taller than the screen ----------------------
     # Nothing clamped the popup and nothing scrolled inside it, so an app with
     # more entries than the screen is tall put the rest below the bottom edge
