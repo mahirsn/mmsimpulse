@@ -535,6 +535,13 @@ import qs.modules.ii.overlay.media"""),
      """    x: Math.round(Math.max(0, Math.min(persistentStateEntry.x, (root.parent?.width ?? Infinity) - root.width))) // Round or it'll be blurry
     y: Math.round(Math.max(0, Math.min(persistentStateEntry.y, (root.parent?.height ?? Infinity) - root.height))) // Round or it'll be blurry"""),
 
+    # The FPS limiter appends to MangoHud's config, and appending to a file in
+    # a directory that does not exist yet does nothing: on a machine where
+    # MangoHud was never configured the limit was silently dropped.
+    ("modules/ii/overlay/fpsLimiter/FpsLimiterContent.qml",
+     """        var cmd = updateCommands + "; pkill -SIGUSR2 mangohud";""",
+     """        var cmd = "mkdir -p ~/.config/MangoHud; " + updateCommands + "; pkill -SIGUSR2 mangohud";"""),
+
     # --- tray menu: scroll a menu taller than the screen ----------------------
     # Nothing clamped the popup and nothing scrolled inside it, so an app with
     # more entries than the screen is tall put the rest below the bottom edge
