@@ -1,0 +1,11 @@
+#!/bin/sh
+# gpu-screen-recorder runs this after it saves something (-sc): $1 is the file
+# and $2 what kind. A saved instant replay gets a notification that opens it.
+# Backgrounded, because notify-send -A waits for the click and the recorder
+# should not wait with it.
+[ "$2" = replay ] || exit 0
+(
+    action=$(notify-send -a "Instant replay" -i video-x-generic -A open=Open \
+        "Replay saved" "${1##*/}")
+    [ "$action" = open ] && xdg-open "$1"
+) >/dev/null 2>&1 &
