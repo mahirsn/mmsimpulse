@@ -525,6 +525,77 @@ import qs.modules.ii.overlay.media"""),
                     property real height: 160
                 }"""),
 
+    # Resources gains a tab per GPU next to CPU, RAM and swap, with its load
+    # graph and, under the percentage, memory, temperature and fan speed. The
+    # CPU tab shows its temperature and fan too. GpuStats (from
+    # overlay/overlayWidgets/resources) polls only while the widget exists.
+    ("modules/ii/overlay/resources/Resources.qml",
+     """    minimumWidth: 300
+    minimumHeight: 200
+""",
+     """    // A tab per GPU does not fit the three-tab width.
+    minimumWidth: 300 + gpuResources.length * 70
+    minimumHeight: 200
+
+    GpuStats { id: gpu }
+
+    function fanString(rpm) {
+        return rpm >= 0 ? ` · ${rpm} RPM` : "";
+    }
+    readonly property string cpuDetail: Translation.tr("of %1").arg(ResourceUsage.maxAvailableCpuString)
+        + (ResourceUsage.cpuTemp > 0 ? ` · ${Math.round(ResourceUsage.cpuTemp)}°C` : "")
+        + fanString(gpu.cpuFan)
+    readonly property bool bothGpus: gpu.hasAmd && gpu.hasNvidia
+    readonly property list<var> gpuResources: [
+        ...(gpu.hasAmd ? [{
+            "icon": "developer_board",
+            "name": root.bothGpus ? "AMD" : Translation.tr("GPU"),
+            "history": gpu.amdHistory,
+            "detail": [gpu.memString(gpu.amdMemUsed, gpu.amdMemTotal),
+                       gpu.amdTemp > 0 ? `${Math.round(gpu.amdTemp)}°C` : ""].filter(s => s).join(" · ")
+                + (gpu.hasNvidia ? "" : root.fanString(gpu.gpuFan))
+        }] : []),
+        ...(gpu.hasNvidia ? [{
+            "icon": "developer_board",
+            "name": root.bothGpus ? "NVIDIA" : Translation.tr("GPU"),
+            "history": gpu.nvidiaHistory,
+            "detail": gpu.nvidiaAwake
+                ? [gpu.memString(gpu.nvidiaMemUsed, gpu.nvidiaMemTotal), `${Math.round(gpu.nvidiaTemp)}°C`].join(" · ")
+                    + root.fanString(gpu.gpuFan)
+                : Translation.tr("Asleep")
+        }] : []),
+    ]
+"""),
+    ("modules/ii/overlay/resources/Resources.qml",
+     """            "maxAvailableString": ResourceUsage.maxAvailableCpuString
+""",
+     """            "maxAvailableString": ResourceUsage.maxAvailableCpuString,
+            "detail": root.cpuDetail
+"""),
+    ("modules/ii/overlay/resources/Resources.qml",
+     """            "maxAvailableString": ResourceUsage.maxAvailableSwapString
+        },
+    ]""",
+     """            "maxAvailableString": ResourceUsage.maxAvailableSwapString
+        },
+        ...root.gpuResources
+    ]"""),
+    ("modules/ii/overlay/resources/Resources.qml",
+     """                maxAvailableString: root.resources[tabBar.currentIndex]?.maxAvailableString ?? "--"
+""",
+     """                maxAvailableString: root.resources[tabBar.currentIndex]?.maxAvailableString ?? "--"
+                detail: root.resources[tabBar.currentIndex]?.detail ?? ""
+"""),
+    ("modules/ii/overlay/resources/Resources.qml",
+     """        required property string maxAvailableString
+""",
+     """        required property string maxAvailableString
+        property string detail
+"""),
+    ("modules/ii/overlay/resources/Resources.qml",
+     """                text: Translation.tr("of %1").arg(resourceSummary.maxAvailableString)""",
+     """                text: resourceSummary.detail || Translation.tr("of %1").arg(resourceSummary.maxAvailableString)"""),
+
     # A saved position is in the coordinates of whichever screen the overlay
     # was on, and nothing brought it back when it opened on a smaller one: a
     # widget left at x 2130 on the 2048px laptop panel was simply gone on the
