@@ -477,6 +477,117 @@ SPECIFIC = [
                         else
                             Quickshell.execDetached(["spectacle", "-R", "screen"]);"""),
 
+    # --- overlay: instant replay ------------------------------------------------
+    # gpu-screen-recorder's own user service keeps the last minute in memory,
+    # the way NVIDIA's instant replay does; install.sh writes its settings and
+    # binds Alt+F10 to save it. The recorder widget gets a switch for the
+    # service and a save button, and shows neither when the recorder is not
+    # installed.
+    ("modules/ii/overlay/recorder/Recorder.qml",
+     """    minimumHeight: 130
+""",
+     """    minimumHeight: 180
+
+    property bool replayAvailable: false
+    property bool replayRunning: false
+    Process {
+        id: replayState
+        command: ["bash", "-c", "command -v gpu-screen-recorder >/dev/null || exit 2; systemctl --user is-active -q gpu-screen-recorder"]
+        onExited: (exitCode, exitStatus) => {
+            root.replayAvailable = exitCode !== 2;
+            root.replayRunning = exitCode === 0;
+        }
+    }
+    // Alt+F10 and the service failing change this from outside the widget.
+    Timer {
+        interval: 2000
+        running: root.visible
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: {
+            replayState.running = false;
+            replayState.running = true;
+        }
+    }
+"""),
+    ("modules/ii/overlay/recorder/Recorder.qml",
+     """            RippleButton {
+                Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
+                Layout.fillWidth: false
+                buttonRadius: height / 2
+                colBackground: Appearance.colors.colLayer3""",
+     """            Row {
+                visible: root.replayAvailable
+                Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
+                spacing: 6
+
+                PillButton {
+                    materialSymbol: "replay"
+                    label: root.replayRunning ? Translation.tr("Instant replay on") : Translation.tr("Instant replay off")
+                    toggled: root.replayRunning
+                    onClicked: {
+                        root.replayRunning = !root.replayRunning;
+                        // The first start asks which screen to record, in a
+                        // window the overlay would cover.
+                        if (root.replayRunning)
+                            GlobalStates.overlayOpen = false;
+                        Quickshell.execDetached(["systemctl", "--user", root.replayRunning ? "enable" : "disable",
+                            "--now", "gpu-screen-recorder"]);
+                    }
+                }
+                PillButton {
+                    visible: root.replayRunning
+                    materialSymbol: "save"
+                    label: Translation.tr("Save replay")
+                    onClicked: {
+                        GlobalStates.overlayOpen = false;
+                        Quickshell.execDetached(["systemctl", "--user", "kill", "--kill-whom=main", "-s", "SIGUSR1",
+                            "gpu-screen-recorder"]);
+                    }
+                    StyledToolTip {
+                        text: Translation.tr("Saves the last minute | Alt+F10")
+                    }
+                }
+            }
+
+            RippleButton {
+                Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
+                Layout.fillWidth: false
+                buttonRadius: height / 2
+                colBackground: Appearance.colors.colLayer3"""),
+    ("modules/ii/overlay/recorder/Recorder.qml",
+     """    component BigRecorderButton: RippleButton {""",
+     """    component PillButton: RippleButton {
+        id: pill
+        required property string materialSymbol
+        required property string label
+        buttonRadius: height / 2
+        colBackground: Appearance.colors.colLayer3
+        colBackgroundHover: Appearance.colors.colLayer3Hover
+        colRipple: Appearance.colors.colLayer3Active
+        colBackgroundToggled: Appearance.colors.colSecondaryContainer
+        colBackgroundToggledHover: Appearance.colors.colSecondaryContainerHover
+        colRippleToggled: Appearance.colors.colSecondaryContainerActive
+        contentItem: Row {
+            anchors.centerIn: parent
+            spacing: 6
+            MaterialSymbol {
+                anchors.verticalCenter: parent.verticalCenter
+                text: pill.materialSymbol
+                iconSize: 20
+                fill: pill.toggled ? 1 : 0
+                color: pill.toggled ? Appearance.colors.colOnSecondaryContainer : Appearance.colors.colOnLayer3
+            }
+            StyledText {
+                anchors.verticalCenter: parent.verticalCenter
+                text: pill.label
+                color: pill.toggled ? Appearance.colors.colOnSecondaryContainer : Appearance.colors.colOnLayer3
+            }
+        }
+    }
+
+    component BigRecorderButton: RippleButton {"""),
+
     # --- overlay: quick settings and media widgets ----------------------------
     # Two widgets from overlay/overlayWidgets: the sidebar's toggles worth
     # reaching over a game, and the media popup's player. Each overlay widget
@@ -1173,7 +1284,8 @@ IMPORT = "import qs.services"
 # and the widget renders with no colour at all -- which is how this first
 # shipped.
 NEEDED = (("WM.", IMPORT), ("BarStyle.", IMPORT), ("CompositorFocusGrab", IMPORT),
-          ("QsWindow", "import Quickshell"), ("WlrLayer.", "import Quickshell.Wayland"))
+          ("QsWindow", "import Quickshell"), ("WlrLayer.", "import Quickshell.Wayland"),
+          ("Process {", "import Quickshell.Io"))
 
 
 def ensure_import(text):

@@ -140,6 +140,7 @@ install -m755 "$REPO"/bin/mmsimpulse-* "$BIN/"
 # inside the compositor; harmless everywhere else, where nothing calls it.
 mkdir -p "$SHIM"
 install -m755 "$REPO/overlay/bin/noctalia" "$SHIM/"
+install -m755 "$REPO/overlay/bin/replay-saved" "$SHIM/"
 
 # --- session script --------------------------------------------------------
 echo "==> session script -> $BIN/start-$CONFIG"
@@ -188,6 +189,23 @@ fi
 # click after every selection. A value the user already set is left alone.
 if [[ -z "$(kreadconfig6 --file spectaclerc --group General --key useReleaseToCapture 2>/dev/null)" ]]; then
     kwriteconfig6 --file spectaclerc --group General --key useReleaseToCapture true
+fi
+
+# Instant replay is gpu-screen-recorder's own user service; the overlay's
+# recorder widget switches it and Alt+F10 saves it. Its settings live in this
+# file, written once and then left to the user. The portal lets it record any
+# screen, the one on the NVIDIA card included, and it asks which only the
+# first time.
+GSR_ENV="$HOME/.config/gpu-screen-recorder.env"
+if [[ ! -f "$GSR_ENV" ]]; then
+    echo "==> instant replay settings -> $GSR_ENV"
+    mkdir -p "$HOME/Videos/Replays"
+    cat > "$GSR_ENV" <<GSR
+WINDOW=portal
+REPLAYDURATION=60
+OUTPUTDIR=$HOME/Videos/Replays
+ADDITIONAL_ARGS=-sc $SHIM/replay-saved -fallback-cpu-encoding yes
+GSR
 fi
 
 # --- shortcuts -------------------------------------------------------------
