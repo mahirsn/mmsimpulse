@@ -636,6 +636,32 @@ import qs.modules.ii.overlay.media"""),
                     property real height: 160
                 }"""),
 
+    # OBS gets a widget of its own (overlay/overlayWidgets/obs): preview,
+    # recording, streaming and scenes over obs-websocket.
+    ("modules/ii/overlay/OverlayContext.qml",
+     """        { identifier: "media", materialSymbol: "music_note" },""",
+     """        { identifier: "media", materialSymbol: "music_note" },
+        { identifier: "obs", materialSymbol: "videocam" },"""),
+    ("modules/ii/overlay/OverlayWidgetDelegateChooser.qml",
+     """import qs.modules.ii.overlay.media""",
+     """import qs.modules.ii.overlay.media
+import qs.modules.ii.overlay.obs"""),
+    ("modules/ii/overlay/OverlayWidgetDelegateChooser.qml",
+     """    DelegateChoice { roleValue: "media"; Media {} }""",
+     """    DelegateChoice { roleValue: "media"; Media {} }
+    DelegateChoice { roleValue: "obs"; Obs {} }"""),
+    ("modules/common/Persistent.qml",
+     """                property JsonObject media: JsonObject {""",
+     """                property JsonObject obs: JsonObject {
+                    property bool pinned: false
+                    property bool clickthrough: false
+                    property real x: 1000
+                    property real y: 160
+                    property real width: 400
+                    property real height: 360
+                }
+                property JsonObject media: JsonObject {"""),
+
     # Resources gains a tab per GPU next to CPU, RAM and swap, with its load
     # graph and, under the percentage, memory, temperature and fan speed. The
     # CPU tab shows its temperature and fan too. GpuStats (from
