@@ -238,13 +238,37 @@ function resolveDuplicates(changed, left) {
     }
 }
 
+// Moving a window that also changes its size waits for the app to answer, and
+// an app on a hidden workspace may not answer (Zen and Firefox do not): the
+// window stayed on the monitor it was hidden on and never appeared where its
+// workspace was shown. It is moved at its own size first, which needs no
+// answer, and a maximised one is maximised again once it is there.
+function sendToScreen(w, screen) {
+    workspace.sendClientToScreen(w, screen);
+    if (w.output === screen)
+        return;
+    const wasMaximized = w.maximizeMode === 3;
+    const g = w.frameGeometry;
+    const a = screen.geometry;
+    w.frameGeometry = {
+        x: a.x + Math.max(0, (a.width - g.width) / 2),
+        y: a.y + Math.max(0, (a.height - g.height) / 2),
+        width: g.width,
+        height: g.height
+    };
+    if (wasMaximized) {
+        w.setMaximize(false, false);
+        w.setMaximize(true, true);
+    }
+}
+
 function gather() {
     const screens = monitors();
     for (let i = 0; i < screens.length; i++) {
         const desktop = workspace.currentDesktopForScreen(screens[i]);
         for (const w of workspace.windowList()) {
             if (poolable(w) && onlyDesktop(w) === desktop && w.output !== screens[i])
-                workspace.sendClientToScreen(w, screens[i]);
+                sendToScreen(w, screens[i]);
         }
     }
 }
