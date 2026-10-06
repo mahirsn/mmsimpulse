@@ -186,6 +186,15 @@ SPECIFIC = [
         : Math.max(1, Math.ceil(WM.workspaces.length / root.overviewColumns))
     readonly property int workspacesShown: root.overviewRows * root.overviewColumns"""),
 
+    # The overview had no screen, so KWin put it on its active output, which
+    # follows the last focused window rather than the mouse: it could open on
+    # the other monitor. It opens on the focused monitor (the one under the
+    # mouse) instead.
+    ("modules/ii/overview/Overview.qml",
+     """        readonly property var monitor: WM.monitorFor(panelWindow.screen)""",
+     """        screen: Quickshell.screens.find(s => s.name === WM.focusedMonitor?.name) ?? null
+        readonly property var monitor: WM.monitorFor(panelWindow.screen)"""),
+
     # --- overview: windows side by side --------------------------------------
     # The overview drew each window at its real place and size, so two
     # maximised windows were one on top of the other and the one underneath

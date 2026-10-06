@@ -85,9 +85,32 @@ function push() {
         // One pool of workspaces across monitors (see below): a workspace's
         // windows are on whichever monitor last showed it.
         pool: poolOn(),
+        // The monitor under the mouse: the shell's focused monitor, as in
+        // Hyprland. KWin's active output follows the last focused window and
+        // can be the other one.
+        cursorOutput: cursorScreenName(),
         activeOutput: workspace.activeScreen ? workspace.activeScreen.name : ""
     }));
 }
+
+function cursorScreenName() {
+    const p = workspace.cursorPos;
+    const s = workspace.screens.find(s => {
+        const g = s.geometry;
+        return p.x >= g.x && p.x < g.x + g.width && p.y >= g.y && p.y < g.y + g.height;
+    });
+    return s ? s.name : "";
+}
+
+// Publish when the mouse crosses to another monitor, not on every movement.
+let lastCursorScreen = cursorScreenName();
+workspace.cursorPosChanged.connect(() => {
+    const name = cursorScreenName();
+    if (name !== lastCursorScreen) {
+        lastCursorScreen = name;
+        push();
+    }
+});
 
 // A KWin script aborts at the first exception with no visible error unless the
 // kwin_scripting category is on, so one renamed signal would silently stop all

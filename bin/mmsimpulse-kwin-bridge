@@ -150,6 +150,7 @@ def build_snapshot(payload, desktops, current_id):
         "outputs": outputs,
         "activeOutput": payload.get("activeOutput", ""),
         "pool": bool(payload.get("pool", False)),
+        "cursorOutput": payload.get("cursorOutput", ""),
     }
 
 

@@ -58,7 +58,11 @@ Scope {
         return byAddress;
     }
     readonly property var addresses: root.windowList.map(w => w.address)
-    readonly property var focusedMonitor: root.monitors.find(m => m.name === root.activeOutput)
+    // The monitor under the mouse, as Hyprland's focused monitor is; KWin's
+    // active output follows the last focused window instead.
+    property string cursorOutput: ""
+    readonly property var focusedMonitor: root.monitors.find(m => m.name === root.cursorOutput)
+        ?? root.monitors.find(m => m.name === root.activeOutput)
         ?? root.monitors[0] ?? null
 
     // Everything that acts on a single window goes through the bridge.
@@ -179,6 +183,7 @@ Scope {
                     root.activeOutput = s.activeOutput ?? "";
                     root.outputs = s.outputs ?? [];
                     root.workspacePool = s.pool ?? false;
+                    root.cursorOutput = s.cursorOutput ?? "";
                 } catch (e) {
                     console.log("[KwinBackend] parse error: " + e);
                 }
