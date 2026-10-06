@@ -71,6 +71,12 @@ Most of these are KWin's own actions, so they honour
 `kwinrc [Windows] PerOutputVirtualDesktops` — turn it on for per-monitor
 workspaces, the way Hyprland behaves.
 
+With it on, the workspaces are one pool shared by every monitor, as in
+Hyprland: workspace 3 is the same workspace whichever monitor asks for it, its
+windows go to the monitor showing it, and asking for one that another monitor
+is showing swaps the two. Plain KWin keeps a separate set of windows per
+monitor instead.
+
 ## Another shell
 
 The session and the widgets are separate things: `start-mmsimpulse` brings up

@@ -72,6 +72,7 @@ function push() {
             const desktop = workspace.currentDesktopForScreen(screens[i]);
             outputs.push({
                 name: screens[i].name,
+                model: screens[i].model || "",
                 currentDesktop: desktop ? String(desktop.id) : ""
             });
         }
@@ -115,6 +116,164 @@ workspace.windowAdded.connect(w => { track(w); push(); });
 workspace.windowRemoved.connect(push);
 workspace.windowActivated.connect(push);
 workspace.currentDesktopChanged.connect(push);
+
+// One pool of workspaces shared by every monitor, the way Hyprland has it.
+//
+// With [Windows] PerOutputVirtualDesktops each output shows its own desktop,
+// but KWin still keeps a window where it is: desktop 3 on the laptop and
+// desktop 3 on the monitor are two separate sets of windows. Here a desktop's
+// windows go to whichever output shows it, and asking for a desktop another
+// output is showing swaps the two, so workspace 3 is reachable from anywhere
+// and there is only one of it.
+//
+// Without per-output desktops every output shows the same one, and gathering
+// its windows onto one of them would empty the others, so nothing here runs.
+function poolOn() {
+    return options.perOutputVirtualDesktops === true;
+}
+
+function onlyDesktop(w) {
+    const d = w.desktops || [];
+    return d.length === 1 ? d[0] : null;
+}
+
+// Transients go along with their parent (sendClientToScreen moves them), and
+// docks, the desktop and other special windows belong to an output, not to a
+// workspace.
+function poolable(w) {
+    return w.managed && !w.deleted && !w.specialWindow && !w.transient && onlyDesktop(w) !== null;
+}
+
+let settling = false;
+
+function showDesktop(desktop, screen) {
+    settling = true;
+    workspace.setCurrentDesktopForScreen(desktop, screen);
+    settling = false;
+}
+
+// A desktop no other output is showing, an empty one if there is any, so a
+// monitor that comes up does not put a hidden workspace's windows on display.
+function freeDesktop(forScreen) {
+    const shown = workspace.screens.filter(s => s !== forScreen)
+        .map(s => workspace.currentDesktopForScreen(s));
+    const free = workspace.desktops.filter(d => !shown.includes(d));
+    const used = workspace.windowList().filter(poolable).map(onlyDesktop);
+    return free.find(d => !used.includes(d)) || free[0] || null;
+}
+
+// Two outputs showing the same desktop: the one that just changed keeps it and
+// the other takes the desktop it left, or else one nobody is showing.
+function resolveDuplicates(changed, left) {
+    const screens = workspace.screens;
+    const keep = changed || workspace.activeScreen;
+    const want = workspace.currentDesktopForScreen(keep);
+    for (let i = 0; i < screens.length; i++) {
+        const other = screens[i];
+        if (other === keep || workspace.currentDesktopForScreen(other) !== want)
+            continue;
+        const shown = screens.map(s => workspace.currentDesktopForScreen(s));
+        const next = left && left !== want && !shown.includes(left) ? left : freeDesktop(other);
+        if (next)
+            showDesktop(next, other);
+    }
+}
+
+function gather() {
+    const screens = workspace.screens;
+    for (let i = 0; i < screens.length; i++) {
+        const desktop = workspace.currentDesktopForScreen(screens[i]);
+        for (const w of workspace.windowList()) {
+            if (poolable(w) && onlyDesktop(w) === desktop && w.output !== screens[i])
+                workspace.sendClientToScreen(w, screens[i]);
+        }
+    }
+}
+
+function pool(changed, left) {
+    if (!poolOn() || settling)
+        return;
+    const focused = workspace.activeScreen;
+    resolveDuplicates(changed, left);
+    gather();
+    keepFocusOnScreen(focused);
+}
+
+// Workspace sharing. Picking "Share virtual screen" in the screen-share dialog
+// makes KWin create an output that exists only in the stream; with the pool,
+// whichever workspace that output shows is what the app receives, live, while
+// you work on another one. It starts on an empty workspace so that starting a
+// stream never shows something by surprise, and the overlay's Share widget
+// switches it to any other.
+const SHARE_PREFIX = "Virtual-virtual-xdp-kde-";
+let screenNames = workspace.screens.map(s => s.name);
+
+function isShare(screen) {
+    return !!screen && screen.name.startsWith(SHARE_PREFIX);
+}
+
+// Moving the focused window moves the focus with it, and on a shared screen
+// that is a screen nobody can see: keys would go to a window off the monitor,
+// and the shell would open its panels there. The focus goes back to the screen
+// it was on (KWin only lets a script step through screens, hence the loop).
+function keepFocusOnScreen(focused) {
+    if (!isShare(workspace.activeScreen))
+        return;
+    const screens = workspace.screens;
+    const target = !isShare(focused) && screens.includes(focused)
+        ? focused : screens.find(s => !isShare(s));
+    for (let i = 0; target && i < screens.length && workspace.activeScreen !== target; i++)
+        workspace.slotSwitchToNextScreen();
+}
+
+// KWin also hands the focus to a screen it has just added, a moment after
+// announcing it, so the screen that had it is kept until then.
+let focusBeforeShare = null;
+
+function screensChanged() {
+    const added = workspace.screens.filter(s => !screenNames.includes(s.name) && isShare(s));
+    screenNames = workspace.screens.map(s => s.name);
+    if (poolOn()) {
+        for (const s of added) {
+            const desktop = freeDesktop(s);
+            if (desktop)
+                showDesktop(desktop, s);
+        }
+        if (added.length > 0)
+            focusBeforeShare = workspace.activeScreen;
+    }
+    pool(null, null);
+}
+
+workspace.windowActivated.connect(() => {
+    const focused = focusBeforeShare;
+    focusBeforeShare = null;
+    if (focused)
+        keepFocusOnScreen(focused);
+});
+
+workspace.currentDesktopChanged.connect((previous, current, output) => pool(output, previous));
+if (workspace.screensChanged)
+    workspace.screensChanged.connect(screensChanged);
+if (options.perOutputVirtualDesktopsChanged)
+    options.perOutputVirtualDesktopsChanged.connect(() => pool(null, null));
+
+function trackPool(w) {
+    // Sent to another desktop (Meta+Alt+N): it goes where that desktop is shown.
+    w.desktopsChanged.connect(() => pool(null, null));
+    // Dragged onto another output: it joins the desktop shown there instead of
+    // being pulled back to the one it came from.
+    w.interactiveMoveResizeFinished.connect(() => {
+        if (!poolOn() || !poolable(w))
+            return;
+        const here = workspace.currentDesktopForScreen(w.output);
+        if (here && onlyDesktop(w) !== here)
+            w.desktops = [here];
+    });
+}
+workspace.windowList().forEach(trackPool);
+workspace.windowAdded.connect(trackPool);
+pool(null, null);
 
 // Super+H: hide the active window from screen sharing and recording (KWin's
 // "exclude from capture"), and show it again. Registered here rather than as a
