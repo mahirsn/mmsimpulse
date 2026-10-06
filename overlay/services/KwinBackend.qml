@@ -107,11 +107,23 @@ Scope {
         const from = root.activeWorkspaceForMonitor(name)?.id ?? root.activeWorkspace?.id ?? 1;
         const count = root.workspaces.length;
         if (count === 0) return;
-        // Wrap, matching KWin's own next/previousDesktop.
-        const next = direction === "next"
-            ? (from % count) + 1
-            : ((from - 2 + count) % count) + 1;
-        root.switchWorkspaceOn(name, next);
+        // Wrap, matching KWin's own next/previousDesktop. Workspaces another
+        // monitor is showing are stepped over: with the KWin script's pool
+        // asking for one moves nothing, and scrolling would stop at it.
+        // Screens made for screen sharing are not monitors and do not count.
+        const taken = root.outputs
+            .filter(o => o.name !== name && !o.name.startsWith("Virtual-virtual-xdp-kde-"))
+            .map(o => o.current);
+        let next = from;
+        for (let i = 0; i < count; i++) {
+            next = direction === "next"
+                ? (next % count) + 1
+                : ((next - 2 + count) % count) + 1;
+            if (!taken.includes(next)) {
+                root.switchWorkspaceOn(name, next);
+                return;
+            }
+        }
     }
 
     function moveWindowToWorkspace(id, wsId) { root.windowAction(id, "move", wsId) }

@@ -430,8 +430,17 @@ function stepHere(by) {
     const screen = screenUnderCursor();
     if (!screen || desktops.length === 0)
         return;
-    const i = desktops.indexOf(workspace.currentDesktopForScreen(screen));
-    switchHere(desktops[(i + by + desktops.length) % desktops.length]);
+    // Workspaces another monitor is showing are stepped over: asking for one
+    // only moves the focus there, so stepping would stop at it.
+    const taken = monitors().filter(s => s !== screen).map(s => workspace.currentDesktopForScreen(s));
+    let i = desktops.indexOf(workspace.currentDesktopForScreen(screen));
+    for (let n = 0; n < desktops.length; n++) {
+        i = (i + by + desktops.length) % desktops.length;
+        if (!taken.includes(desktops[i])) {
+            switchHere(desktops[i]);
+            return;
+        }
+    }
 }
 
 for (let n = 1; n <= 10; n++) {
