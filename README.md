@@ -1,216 +1,94 @@
 # mmsimpulse
 
-A Wayland session made of a **KWin** compositor and the
-[end-4 illogical-impulse](https://github.com/end-4/dots-hyprland) shell — via the
-[pctrade/end4-pC](https://github.com/pctrade/end4-pC) skin — and nothing else.
+A Wayland session made of KWin and the
+[end-4 illogical-impulse](https://github.com/end-4/dots-hyprland) shell (through
+the [pctrade/end4-pC](https://github.com/pctrade/end4-pC) skin), with
+Hyprland-style workspaces. No Plasma, no session manager.
 
-No desktop environment: no plasmashell, no session manager. Everything the shell
-needs is started by `start-mmsimpulse`, which is about 200 lines.
-
-Any KWin 6 that provides `kwin_wayland` works. **Tiling is off**: mmsimpulse
-expects `[Tiling] Enabled=false` in `~/.config/kwinrc` and implements no swap,
-split or layout switching.
+Works with any KWin 6. Tiling must be off (`[Tiling] Enabled=false` in
+`~/.config/kwinrc`).
 
 ## Install
 
-Every dependency is in the official repositories, so no AUR helper is needed
-for anything but this package itself.
+Arch:
 
-```sh
-paru -S mmsimpulse-git      # or yay
+```
+paru -S mmsimpulse-git
 mmsimpulse-install
 ```
 
-Or from a checkout:
+Then log out and pick **mmsimpulse** in the login screen. Run
+`mmsimpulse-install` again to pick up a new release or an updated skin.
 
-```sh
-git clone https://github.com/mahirsn/mmsimpulse && cd mmsimpulse && ./install.sh
+From a checkout: `./install.sh`. It installs no packages, so bring `kwin
+kglobalacceld quickshell xdg-desktop-portal-kde python-dbus python-gobject
+rsync jq imagemagick wl-clipboard libnotify spectacle`, and `kdeplasma-addons`
+for an Alt+Tab switcher.
+
+The package builds a KWin effect against the installed KWin: reinstall it after
+a KWin update.
+
+## Use
+
+`Meta+Space` opens the launcher. Every other shell action is listed under
+**mmsimpulse** in System Settings > Shortcuts, unbound. For Hyprland-style
+workspace keys:
+
 ```
-
-A checkout installs no packages, so bring them yourself: `kwin kglobalacceld
-quickshell xdg-desktop-portal-kde python-dbus python-gobject rsync jq
-imagemagick wl-clipboard libnotify spectacle`, plus `kdeplasma-addons` for a
-task switcher — KWin ships no Alt+Tab layout of its own and draws nothing
-without one.
-
-Then log out and pick **mmsimpulse**.
-
-The widgets themselves are pctrade/end4-pC, which is not vendored here. If it is
-not already at `~/.config/quickshell/end4-pC` the installer offers to clone it;
-set `MMSIMPULSE_BASE` to use a copy elsewhere, or `--yes` to take every prompt's
-default. Re-run the installer to pick up an updated skin or a new release.
-
-## Shortcuts
-
-Only the launcher is bound, to `Meta+Space`, and only when nothing else holds
-that key — a session with no way to open the launcher has no way to start
-anything. Every other action is installed as a hidden `.desktop` entry and
-appears in **System Settings > Shortcuts** under `mmsimpulse`, unbound, for you
-to assign:
-
-```sh
-/usr/share/mmsimpulse/shortcuts/install-shortcuts.sh
-```
-
-Hyprland-style workspace keys are a separate, opt-in script, because that one
-does bind keys:
-
-```sh
 /usr/share/mmsimpulse/shortcuts/install-workspace-keys.sh
 ```
 
-| | |
-|---|---|
-| `Meta+1`..`0` | switch workspace on the monitor under the mouse |
-| `Meta+Alt+1`..`0` | send window there |
-| `Meta+Shift+1`..`0` | send window there and follow |
-| `Meta+Ctrl+Left/Right` | previous / next workspace on the monitor under the mouse |
-| `Meta+Shift+Left/Right` | send window to previous / next |
-
-Switching goes through the mmsimpulse KWin script and acts on the monitor
-under the mouse, as in Hyprland; KWin's own "Switch to Desktop N" acts on
-whichever monitor last had a focused window. Turn on
-`kwinrc [Windows] PerOutputVirtualDesktops` for per-monitor workspaces.
-
-With it on, the workspaces are one pool shared by every monitor, as in
-Hyprland: workspace 3 is the same workspace whichever monitor asks for it, its
-windows go to the monitor showing it, and asking for one that another monitor
-is showing moves the focus to that monitor rather than taking the workspace
-from it. Plain KWin keeps a separate set of windows per monitor instead.
-
-## Another shell
-
-The session and the widgets are separate things: `start-mmsimpulse` brings up
-KWin, the services a shell needs and the workspace keys, then runs one
-Quickshell configuration on top. Which one is a choice.
-
-```sh
-echo nandoroid > ~/.config/mmsimpulse/shell   # or: MMSIMPULSE_SHELL=nandoroid
+```
+Meta+1..0               switch workspace
+Meta+Alt+1..0           send window there
+Meta+Shift+1..0         send window there and follow
+Meta+Ctrl+Left/Right    previous / next workspace
+Meta+Shift+Left/Right   send window to previous / next
 ```
 
-The name is a Quickshell configuration — a directory holding `shell.qml` under
-`~/.config/quickshell` or `/etc/xdg/quickshell`. Everything else stays
-mmsimpulse: the log, the Wayland socket, `mmsimpulse-wallpaper`, the bridge. A
-name with no `shell.qml` behind it falls back to our own shell, because a
-session that comes up with no bar and no launcher can only be escaped from a
-TTY.
+`Meta+Z` opens the overlay: quick settings, media, OBS, Wi-Fi, Bluetooth,
+recorder with instant replay, resources, notes and more. Hold Ctrl to snap
+widgets to a grid.
 
-### NAnDoroid
+### Several monitors
 
-[NAnDoroid](https://github.com/na-ive/nandoroid-shell) is written for Hyprland
-and there is a patched build of it here:
-
-```sh
-./install.sh --nandoroid
-echo nandoroid-kwin > ~/.config/mmsimpulse/shell
-```
-
-It installs beside our own shell under its own name, so both stay selectable
-and an upstream copy on a Hyprland session is untouched. `rm` that file to come
-back.
-
-Two things had to be bridged. Fifty of its QML files import
-`Quickshell.Hyprland` and read workspaces, monitors and the window list off
-that singleton; `overlay/nandoroid/compat/` reimplements it on `KwinBackend`
-and `patch-nandoroid.py` rewrites the import line to reach it. Replacing the
-module under its own URI does not work — Quickshell serves it from its own qrc,
-which beats anything on `QML_IMPORT_PATH`. Separately, its data service shells
-out to `hyprctl -j` six ways; `mmsimpulse-hyprctl` answers those from the
-bridge, so that file needed no porting at all.
-
-What is missing: its fifteen global shortcuts reach the shell over `ipc call
-key_<name> trigger` but nothing writes the `.desktop` entries that would bind
-them to keys, and click-outside-to-close needs `hyprland_focus_grab_v1`, which
-KWin has no equivalent for — panels close by their own means instead.
-
-## Known gaps
-
-- **No live window previews in the overview.** They need a foreign-toplevel
-  protocol KWin does not implement, so windows show as an icon and frame.
-- **Hold-to-show shortcuts do not exist.** kglobalaccel launches a command and
-  has no release event, so the `*Open`/`*Close` pairs stay unbound.
-- **Free-form window dragging in the overview is Hyprland-only.** Dropping a
-  window on another workspace works; dropping it at a position does not.
-- **The overview covers the bar's strip**, because KWin reports no struts.
-- **Hyprland-only settings pages are inert** — animations, `hyprland.conf`
-  editing, monitor layout. Their KDE equivalents are in System Settings. Night
-  light works, through KWin's own; its gamma slider does nothing, since KWin
-  offers no gamma control.
-- **Right-clicking a tray icon opens no menu.** Quickshell creates the window,
-  sizes it, anchors it to the bar and reports it visible, but no Wayland
-  surface ever reaches KWin — while a plain `PopupWindow` with the identical
-  anchor, opened from the same handler, maps and paints. `TESTING.md` records
-  everything measured and everything ruled out.
-
-## Screen sharing
-
-If the machine also runs Hyprland it probably has
-`~/.config/xdg-desktop-portal/portals.conf` pinning `default=hyprland;gtk`.
-That file applies to every session, so a KDE session asks the Hyprland backend
-for screen sources it cannot provide, the frontend reports none at all, and the
-share picker never appears. The installer writes a `kde-portals.conf` beside it,
-which outranks it and applies only here.
+Turn on `[Windows] PerOutputVirtualDesktops=true` in `~/.config/kwinrc`. The
+workspaces are then one pool, as in Hyprland: each monitor shows one of them,
+the keys and the bar act on the monitor under the mouse, and asking for a
+workspace another monitor shows moves the focus there. Fullscreen games stay
+on screen when you click another window.
 
 ### Sharing a workspace
 
 Pick **Share virtual screen** in an app's screen-share dialog (OBS, Discord, a
-browser) while on the workspace you want to share. The app then receives that
-workspace, live: use it as usual, switch to another one with `Meta+N`, and the
-stream keeps showing the shared workspace and what happens on it. **Share
-workspace** in the Super+Z overlay switches the stream to another workspace.
-The lock screen hides it like any other screen.
+browser). The app receives the workspace you are on, live, even after you
+switch to another one. **Share workspace** in the overlay picks a different
+one.
 
-The windows are drawn into the stream by a KWin effect,
-`mmsimpulse_workspaceshare`, which the package builds against the installed
-KWin: rebuild the package after a KWin update. From a checkout, build it with
-`cmake -S kwin-effect -B build && cmake --build build && sudo cmake --install build`.
-This needs `PerOutputVirtualDesktops` on.
+### Another shell
 
-## How it works
-
-The skin routes compositor access through `services/WM.qml`, which already has
-Hyprland and niri backends. This adds a KWin one.
-
-KWin publishes no window list on D-Bus, and Quickshell has no D-Bus API in QML
-and sees nothing of KWin's windows natively. The only place the window list
-exists is inside a KWin script, whose only way out is `callDBus()`. So
-`mmsimpulse-kwin-bridge` owns a bus name, loads that script, merges its pushes
-with virtual-desktop state read off `org.kde.KWin`, and prints one JSON snapshot
-per line — the same shape `NiriBackend.qml` gets from `niri msg event-stream`.
-
-About twenty files in the skin reach past `WM.qml` and call `Quickshell.Hyprland`
-directly. `overlay/patch-shell.py` rewrites those as scripted edits rather than
-shipping copies of upstream files, and fails the install if a rule stops
-matching — so an upstream rename is loud instead of silently leaving a Hyprland
-call behind.
-
-## Development
-
-```sh
-python3 test_bridge.py      # snapshot merging, id normalisation, desktop mapping
+```
+echo nandoroid-kwin > ~/.config/mmsimpulse/shell
 ```
 
-The harnesses this was developed against — a clean Arch VM driven over QMP, and
-a nested session for quick iteration — are not part of the repository. What
-matters for anyone reading this is that the VM is what the claims here were
-checked against: a machine with no KWin fork, no leftovers and nothing from a
-developer's `~/.config`.
+runs [NAnDoroid](https://github.com/na-ive/nandoroid-shell) instead, after
+`./install.sh --nandoroid`. Delete the file to come back.
 
-`TESTING.md` is the per-component checklist for a live session.
+## Known gaps
+
+- The overview shows windows as icons, without live previews.
+- Right-clicking a tray icon opens no menu.
+- Hyprland-only settings pages (animations, monitor layout) do nothing; use
+  System Settings.
 
 ## Layout
 
 ```
-bin/mmsimpulse-kwin-bridge      KWin <-> shell bridge daemon
-kwin-script/                    KWin script: window list, workspace pool, screen sharing
-kwin-effect/                    KWin effect that paints a shared workspace into its stream
-overlay/services/               KwinBackend.qml, and WM.qml and
-                                CompositorGlobalShortcut.qml with a KWin branch
-overlay/overlayWidgets/         widgets for the Super+Z overlay: quick settings, media,
-                                OBS, Wi-Fi, Bluetooth, workspace sharing
-overlay/bin/noctalia            shim for a fork's built-in shell shortcuts
-overlay/patch-shell.py          scripted edits to the rest of the skin
-session/                        session script and login-manager entry
-shortcuts/                      shortcut tables and installers
-packaging/                      PKGBUILD
+bin/            KWin bridge and helpers
+kwin-script/    KWin script: windows, workspace pool, screen sharing
+kwin-effect/    KWin effect for workspace sharing
+overlay/        shell additions and patch-shell.py, which edits the skin
+session/        session script and login entry
+shortcuts/      shortcut installers
+packaging/      PKGBUILD
 ```
