@@ -21,6 +21,7 @@
 #include "effect/effect.h"
 #include "effect/effecthandler.h"
 #include "effect/effectwindow.h"
+#include "scene/scene.h"
 
 #include <QHash>
 
@@ -65,6 +66,12 @@ public:
         return 90;
     }
 
+    void prePaintScreen(ScreenPrePaintData &data) override
+    {
+        m_view = data.view;
+        effects->prePaintScreen(data);
+    }
+
     void prePaintWindow(RenderView *view, EffectWindow *w, WindowPrePaintData &data) override
     {
         // Kept paintable for the stream only: it must not hide what is
@@ -92,10 +99,14 @@ public:
             return;
         }
         VirtualDesktop *desktop = effects->currentDesktop(screen);
+        // The stream's own view hides what KWin hides from capture: windows
+        // marked "hide from screen capture" and the recording app's own
+        // windows. Drawn by hand here, they would get past it.
+        const auto *sceneView = qobject_cast<SceneView *>(m_view);
         const RectF target = screen->geometry();
         const auto windows = effects->stackingOrder();
         for (EffectWindow *w : windows) {
-            if (!shown(w, desktop, screen)) {
+            if (!shown(w, desktop, screen) || (sceneView && sceneView->shouldHideWindow(w->window()))) {
                 continue;
             }
             // The monitor's picture, scaled to fit the shared screen and
@@ -186,6 +197,7 @@ private:
     }
 
     QList<LogicalOutput *> m_shares;
+    RenderView *m_view = nullptr;
     QHash<EffectWindow *, EffectWindowVisibleRef> m_visible;
 };
 
