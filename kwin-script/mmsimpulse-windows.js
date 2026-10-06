@@ -256,7 +256,10 @@ function focusScreen(target) {
 // announcing it, so the screen that had it is kept until then.
 let focusBeforeShare = null;
 
+let screensChangedAt = 0;
+
 function screensChanged() {
+    screensChangedAt = Date.now();
     const added = workspace.screens.filter(s => !screenNames.includes(s.name) && isShare(s));
     screenNames = workspace.screens.map(s => s.name);
     // A new shared screen starts on the workspace in front of you.
@@ -283,21 +286,76 @@ if (workspace.screensChanged)
 if (options.perOutputVirtualDesktopsChanged)
     options.perOutputVirtualDesktopsChanged.connect(() => pool(null, null));
 
-function trackPool(w) {
+// Fullscreen games stay on screen when another window takes the focus, as in
+// Hyprland. GLFW (Minecraft) and SDL games minimise a fullscreen window
+// themselves the moment it loses the focus; KWin honours that and the game
+// disappears from its monitor. Hyprland has no minimising, so there it stays.
+//
+// The order of events tells the two apart. The game's own minimising comes
+// right after it lost the focus while still shown; minimising it by hand
+// (a shortcut, the title bar) marks it minimised before the focus leaves.
+// Only the first is undone, without taking the focus back.
+const FOCUS_LOSS_MINIMISE_MS = 1000;
+
+function keepFullscreenShown(w) {
+    let lostFocusAt = 0;
+    connectIfPresentTo(w, "activeChanged", () => {
+        lostFocusAt = !w.active && !w.minimized && w.fullScreen ? Date.now() : 0;
+    });
+    connectIfPresentTo(w, "minimizedChanged", () => {
+        if (w.minimized && w.fullScreen && !w.active && !w.deleted
+                && lostFocusAt && Date.now() - lostFocusAt < FOCUS_LOSS_MINIMISE_MS) {
+            lostFocusAt = 0;
+            w.minimized = false;
+        }
+    });
+}
+
+function connectIfPresentTo(obj, name, handler) {
+    const signal = obj[name];
+    if (signal && typeof signal.connect === "function")
+        signal.connect(handler);
+}
+workspace.windowList().forEach(keepFullscreenShown);
+workspace.windowAdded.connect(keepFullscreenShown);
+
+// A window joins the workspace shown on the monitor it is on.
+function joinWorkspaceHere(w) {
+    if (!poolOn() || !poolable(w) || !w.output || isShare(w.output))
+        return;
+    const here = workspace.currentDesktopForScreen(w.output);
+    if (here && onlyDesktop(w) !== here)
+        w.desktops = [here];
+}
+
+// KWin gives a new window the workspace of the focused monitor, wherever the
+// window then goes: a game that goes fullscreen on the other monitor, or an app
+// that reopens where it was, ended up there on a workspace that monitor was not
+// showing, hidden, until the pool pulled it back. It joins the workspace of the
+// monitor it lands on instead: when it opens, when it moves there in its first
+// seconds or when it goes fullscreen there. A monitor coming or going moves
+// windows too; those keep their workspace.
+const NEW_WINDOW_SETTLE_MS = 3000;
+
+function trackPool(w, isNew) {
+    const addedAt = isNew ? Date.now() : 0;
     // Sent to another desktop (Meta+Alt+N): it goes where that desktop is shown.
     w.desktopsChanged.connect(() => pool(null, null));
     // Dragged onto another output: it joins the desktop shown there instead of
     // being pulled back to the one it came from.
-    w.interactiveMoveResizeFinished.connect(() => {
-        if (!poolOn() || !poolable(w))
+    w.interactiveMoveResizeFinished.connect(() => joinWorkspaceHere(w));
+    connectIfPresentTo(w, "outputChanged", () => {
+        if (Date.now() - screensChangedAt < 1000)
             return;
-        const here = workspace.currentDesktopForScreen(w.output);
-        if (here && onlyDesktop(w) !== here)
-            w.desktops = [here];
+        if (w.fullScreen || (addedAt && Date.now() - addedAt < NEW_WINDOW_SETTLE_MS))
+            joinWorkspaceHere(w);
     });
 }
-workspace.windowList().forEach(trackPool);
-workspace.windowAdded.connect(trackPool);
+workspace.windowList().forEach(w => trackPool(w, false));
+workspace.windowAdded.connect(w => {
+    trackPool(w, true);
+    joinWorkspaceHere(w);
+});
 pool(null, null);
 
 // Meta+1..0 and Meta+Ctrl+Left/Right act on the monitor under the mouse, as
