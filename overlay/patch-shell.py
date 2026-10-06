@@ -195,6 +195,15 @@ SPECIFIC = [
      """        screen: Quickshell.screens.find(s => s.name === WM.focusedMonitor?.name) ?? null
         readonly property var monitor: WM.monitorFor(panelWindow.screen)"""),
 
+    # Like the overview, the overlay had no screen and could open on the
+    # monitor KWin last focused a window on rather than the one in use.
+    ("modules/ii/overlay/Overlay.qml",
+     """            id: overlayWindow
+""",
+     """            id: overlayWindow
+            screen: Quickshell.screens.find(s => s.name === WM.focusedMonitor?.name) ?? null
+"""),
+
     # --- overview: windows side by side --------------------------------------
     # The overview drew each window at its real place and size, so two
     # maximised windows were one on top of the other and the one underneath

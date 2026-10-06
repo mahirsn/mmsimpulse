@@ -2,6 +2,8 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import qs
+import qs.modules.common
 
 // WM backend for KWin 6 — stock kwin or any fork of it. Same contract as
 // NiriBackend.qml, same shape: a long-lived process streams JSON state in,
@@ -24,6 +26,21 @@ Scope {
     property var outputs: []
     // The KWin script keeps one pool of workspaces across monitors.
     property bool workspacePool: false
+
+    // A screen made by "Share virtual screen" just appeared: open the overlay
+    // with the Share workspace widget, so the workspace to stream can be
+    // picked right away.
+    property var knownShares: null
+    onOutputsChanged: {
+        const shares = root.outputs.map(o => o.name).filter(n => n.startsWith("Virtual-virtual-xdp-kde-"));
+        const added = root.knownShares === null ? [] : shares.filter(n => !root.knownShares.includes(n));
+        root.knownShares = shares;
+        if (added.length === 0)
+            return;
+        if (!Persistent.states.overlay.open.includes("workspaceShare"))
+            Persistent.states.overlay.open.push("workspaceShare");
+        GlobalStates.overlayOpen = true;
+    }
 
     // Monitors come from Quickshell itself, which is already compositor
     // agnostic — no need to ask KWin. The `logical` shape matches NiriBackend
