@@ -186,6 +186,98 @@ SPECIFIC = [
         : Math.max(1, Math.ceil(WM.workspaces.length / root.overviewColumns))
     readonly property int workspacesShown: root.overviewRows * root.overviewColumns"""),
 
+    # --- overview: windows side by side --------------------------------------
+    # The overview drew each window at its real place and size, so two
+    # maximised windows were one on top of the other and the one underneath
+    # could be neither seen nor dragged to another workspace without moving
+    # the top one first. On KWin a workspace with more than one window lays
+    # them out side by side in its cell, the way KDE's own Overview does; a
+    # lone window keeps its real place. Hyprland keeps the faithful layout.
+    ("modules/ii/overview/OverviewWindow.qml",
+     """    property real initX: {
+        return Math.max((windowData?.at[0] - (monitorData?.x ?? 0) - monitorData?.reserved[0]) * widthRatio * root.scale, 0) + xOffset;
+    }
+
+    property real initY: {
+        return Math.max((windowData?.at[1] - (monitorData?.y ?? 0) - monitorData?.reserved[1]) * heightRatio * root.scale, 0) + yOffset;
+    }""",
+     """    // Where the overview lays the window out instead of at its real place:
+    // {x, y, w, h} within the workspace cell.
+    property var slot: null
+    property real initX: {
+        if (root.slot) return root.slot.x + xOffset;
+        return Math.max((windowData?.at[0] - (monitorData?.x ?? 0) - monitorData?.reserved[0]) * widthRatio * root.scale, 0) + xOffset;
+    }
+
+    property real initY: {
+        if (root.slot) return root.slot.y + yOffset;
+        return Math.max((windowData?.at[1] - (monitorData?.y ?? 0) - monitorData?.reserved[1]) * heightRatio * root.scale, 0) + yOffset;
+    }"""),
+    ("modules/ii/overview/OverviewWindow.qml",
+     """    property var targetWindowWidth: windowData?.size[0] * scale * widthRatio
+    property var targetWindowHeight: windowData?.size[1] * scale * heightRatio""",
+     """    property var targetWindowWidth: root.slot ? root.slot.w : windowData?.size[0] * scale * widthRatio
+    property var targetWindowHeight: root.slot ? root.slot.h : windowData?.size[1] * scale * heightRatio"""),
+    ("modules/ii/overview/OverviewWidget.qml",
+     """    property int draggingFromWorkspace: -1""",
+     """    // Each workspace's windows in a grid filling its cell, in reading order
+    // of where they really are, each scaled to fit its slot and never above
+    // its real size. Keyed by window address; workspaces with one window are
+    // left out and keep the real layout.
+    readonly property var spreadSlots: {
+        if (WM.compositor === "hyprland")
+            return ({});
+        const byWorkspace = {};
+        for (const w of root.windows) {
+            if (w.output !== root.monitor?.name || !w.workspace)
+                continue;
+            (byWorkspace[w.workspace.id] = byWorkspace[w.workspace.id] || []).push(w);
+        }
+        const W = root.workspaceImplicitWidth, H = root.workspaceImplicitHeight;
+        const gap = Math.min(W, H) * 0.04;
+        const slots = {};
+        for (const id in byWorkspace) {
+            const wins = byWorkspace[id];
+            if (wins.length < 2)
+                continue;
+            wins.sort((a, b) => (a.at[1] - b.at[1]) || (a.at[0] - b.at[0]) || (a.address < b.address ? -1 : 1));
+            const cols = Math.ceil(Math.sqrt(wins.length));
+            const rows = Math.ceil(wins.length / cols);
+            const cellW = (W - gap * (cols + 1)) / cols, cellH = (H - gap * (rows + 1)) / rows;
+            wins.forEach((w, i) => {
+                const row = Math.floor(i / cols), col = i % cols;
+                // A short last row is centred rather than left-aligned.
+                const inRow = Math.min(cols, wins.length - row * cols);
+                const shift = (cols - inRow) * (cellW + gap) / 2;
+                const aspect = (w.size[0] || 1) / (w.size[1] || 1);
+                const ww = Math.min(cellW, cellH * aspect, w.size[0] * root.scale);
+                const hh = ww / aspect;
+                slots[w.address] = {
+                    x: gap + col * (cellW + gap) + shift + (cellW - ww) / 2,
+                    y: gap + row * (cellH + gap) + (cellH - hh) / 2,
+                    w: ww,
+                    h: hh
+                };
+            });
+        }
+        return slots;
+    }
+
+    property int draggingFromWorkspace: -1"""),
+    ("modules/ii/overview/OverviewWidget.qml",
+     """                    windowData: windowByAddress[address]
+""",
+     """                    windowData: windowByAddress[address]
+                    slot: root.spreadSlots[address] ?? null
+"""),
+    # A drop that goes nowhere puts the window back where it is drawn, which
+    # is its slot when it has one.
+    ("modules/ii/overview/OverviewWidget.qml",
+     """                            window.x = Math.round(xWithinWorkspaceWidget + xOffset)
+                            window.y = Math.round(yWithinWorkspaceWidget + yOffset)""",
+     """                            window.x = Math.round(window.initX)
+                            window.y = Math.round(window.initY)"""),
+
     # --- popup placement ----------------------------------------------------
     # Without a screen the PanelWindow lands on whichever one Quickshell picks
     # first, so hovering a widget on the second monitor opened its popup on the
