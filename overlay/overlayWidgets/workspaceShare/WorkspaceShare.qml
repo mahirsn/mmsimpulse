@@ -10,9 +10,9 @@ import qs.modules.ii.overlay
 
 // Share a workspace rather than a screen. Picking "Share virtual screen" in an
 // app's screen-share dialog makes KWin add a screen that exists only in the
-// stream, and the KWin script hands that screen the windows of whichever
-// workspace it shows. This picks the workspace: the app sees it live while you
-// carry on with another one.
+// stream; it starts on the workspace you are on, and the
+// mmsimpulse_workspaceshare effect paints that workspace's windows there,
+// whether a monitor is showing it or not. This picks another workspace.
 StyledOverlayWidget {
     id: root
     title: Translation.tr("Share workspace")

@@ -153,11 +153,17 @@ which outranks it and applies only here.
 ### Sharing a workspace
 
 Pick **Share virtual screen** in an app's screen-share dialog (OBS, Discord, a
-browser) and open **Share workspace** in the Super+Z overlay. Whichever
-workspace it is set to is what the app receives, live, while you work on
-another one; it starts on an empty workspace, and sending a window there
-(`Meta+Alt+N`) puts it in the stream. When the stream ends the windows come
-back. This needs `PerOutputVirtualDesktops` on.
+browser) while on the workspace you want to share. The app then receives that
+workspace, live: use it as usual, switch to another one with `Meta+N`, and the
+stream keeps showing the shared workspace and what happens on it. **Share
+workspace** in the Super+Z overlay switches the stream to another workspace.
+The lock screen hides it like any other screen.
+
+The windows are drawn into the stream by a KWin effect,
+`mmsimpulse_workspaceshare`, which the package builds against the installed
+KWin: rebuild the package after a KWin update. From a checkout, build it with
+`cmake -S kwin-effect -B build && cmake --build build && sudo cmake --install build`.
+This needs `PerOutputVirtualDesktops` on.
 
 ## How it works
 
@@ -196,6 +202,7 @@ developer's `~/.config`.
 ```
 bin/mmsimpulse-kwin-bridge      KWin <-> shell bridge daemon
 kwin-script/                    KWin script: window list, workspace pool, screen sharing
+kwin-effect/                    KWin effect that paints a shared workspace into its stream
 overlay/services/               KwinBackend.qml, and WM.qml and
                                 CompositorGlobalShortcut.qml with a KWin branch
 overlay/overlayWidgets/         widgets for the Super+Z overlay: quick settings, media,

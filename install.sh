@@ -209,6 +209,11 @@ GSR
 fi
 
 # --- shortcuts -------------------------------------------------------------
+# The workspace-sharing effect, if the package installed it, without waiting
+# for the next login.
+busctl --user call org.kde.KWin /Effects org.kde.kwin.Effects loadEffect s \
+    mmsimpulse_workspaceshare >/dev/null 2>&1 || true
+
 "$REPO/shortcuts/install-shortcuts.sh"
 # Super+1..0 for workspaces is what the shell's own workspace widgets promise.
 "$REPO/shortcuts/install-workspace-keys.sh" >/dev/null

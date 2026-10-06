@@ -1,0 +1,9 @@
+{
+    "KPlugin": {
+        "Category": "Tools",
+        "Description": "Shows a workspace on the screen KDE's screen-share dialog creates with \"Share virtual screen\", whether or not it is on a monitor (mmsimpulse)",
+        "EnabledByDefault": true,
+        "License": "GPL",
+        "Name": "mmsimpulse workspace sharing"
+    }
+}

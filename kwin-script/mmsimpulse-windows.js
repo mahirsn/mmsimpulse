@@ -132,6 +132,24 @@ function poolOn() {
     return options.perOutputVirtualDesktops === true;
 }
 
+// Workspace sharing. Picking "Share virtual screen" in the screen-share dialog
+// makes KWin create a screen that exists only in the stream. Its current
+// desktop says which workspace is shared, and the mmsimpulse_workspaceshare
+// effect paints that workspace's windows on it from the monitor they are on,
+// so the workspace stays usable there and keeps streaming while the monitor
+// shows another. Such a screen is not a monitor: the pool neither moves
+// windows onto it nor swaps workspaces with it.
+const SHARE_PREFIX = "Virtual-virtual-xdp-kde-";
+let screenNames = workspace.screens.map(s => s.name);
+
+function isShare(screen) {
+    return !!screen && screen.name.startsWith(SHARE_PREFIX);
+}
+
+function monitors() {
+    return workspace.screens.filter(s => !isShare(s));
+}
+
 function onlyDesktop(w) {
     const d = w.desktops || [];
     return d.length === 1 ? d[0] : null;
@@ -155,7 +173,7 @@ function showDesktop(desktop, screen) {
 // A desktop no other output is showing, an empty one if there is any, so a
 // monitor that comes up does not put a hidden workspace's windows on display.
 function freeDesktop(forScreen) {
-    const shown = workspace.screens.filter(s => s !== forScreen)
+    const shown = monitors().filter(s => s !== forScreen)
         .map(s => workspace.currentDesktopForScreen(s));
     const free = workspace.desktops.filter(d => !shown.includes(d));
     const used = workspace.windowList().filter(poolable).map(onlyDesktop);
@@ -165,8 +183,10 @@ function freeDesktop(forScreen) {
 // Two outputs showing the same desktop: the one that just changed keeps it and
 // the other takes the desktop it left, or else one nobody is showing.
 function resolveDuplicates(changed, left) {
-    const screens = workspace.screens;
+    const screens = monitors();
     const keep = changed || workspace.activeScreen;
+    if (isShare(keep))
+        return;
     const want = workspace.currentDesktopForScreen(keep);
     for (let i = 0; i < screens.length; i++) {
         const other = screens[i];
@@ -180,7 +200,7 @@ function resolveDuplicates(changed, left) {
 }
 
 function gather() {
-    const screens = workspace.screens;
+    const screens = monitors();
     for (let i = 0; i < screens.length; i++) {
         const desktop = workspace.currentDesktopForScreen(screens[i]);
         for (const w of workspace.windowList()) {
@@ -199,18 +219,6 @@ function pool(changed, left) {
     keepFocusOnScreen(focused);
 }
 
-// Workspace sharing. Picking "Share virtual screen" in the screen-share dialog
-// makes KWin create an output that exists only in the stream; with the pool,
-// whichever workspace that output shows is what the app receives, live, while
-// you work on another one. It starts on an empty workspace so that starting a
-// stream never shows something by surprise, and the overlay's Share widget
-// switches it to any other.
-const SHARE_PREFIX = "Virtual-virtual-xdp-kde-";
-let screenNames = workspace.screens.map(s => s.name);
-
-function isShare(screen) {
-    return !!screen && screen.name.startsWith(SHARE_PREFIX);
-}
 
 // Moving the focused window moves the focus with it, and on a shared screen
 // that is a screen nobody can see: keys would go to a window off the monitor,
@@ -221,7 +229,7 @@ function keepFocusOnScreen(focused) {
         return;
     const screens = workspace.screens;
     const target = !isShare(focused) && screens.includes(focused)
-        ? focused : screens.find(s => !isShare(s));
+        ? focused : monitors()[0];
     for (let i = 0; target && i < screens.length && workspace.activeScreen !== target; i++)
         workspace.slotSwitchToNextScreen();
 }
@@ -233,15 +241,14 @@ let focusBeforeShare = null;
 function screensChanged() {
     const added = workspace.screens.filter(s => !screenNames.includes(s.name) && isShare(s));
     screenNames = workspace.screens.map(s => s.name);
-    if (poolOn()) {
-        for (const s of added) {
-            const desktop = freeDesktop(s);
-            if (desktop)
-                showDesktop(desktop, s);
-        }
-        if (added.length > 0)
-            focusBeforeShare = workspace.activeScreen;
+    // A new shared screen starts on the workspace in front of you.
+    const looking = isShare(workspace.activeScreen) ? monitors()[0] : workspace.activeScreen;
+    if (poolOn() && looking) {
+        for (const s of added)
+            showDesktop(workspace.currentDesktopForScreen(looking), s);
     }
+    if (added.length > 0)
+        focusBeforeShare = looking;
     pool(null, null);
 }
 
