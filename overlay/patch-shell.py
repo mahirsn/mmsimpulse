@@ -147,7 +147,7 @@ SPECIFIC = [
                         // spans every output, so restrict it here or windows
                         // from the other screens land on top of these.
                         if (WM.compositor !== "hyprland")
-                            return root.windows.filter(w => inGroup(w) && w.output === root.monitor?.name)
+                            return root.windows.filter(w => inGroup(w) && root.showsWindowOf(w))
                         return ToplevelManager.toplevels.values.filter((toplevel) => {
                             const address = `0x${toplevel.HyprlandToplevel?.address}`
                             return inGroup(windowByAddress[address]);
@@ -220,7 +220,15 @@ SPECIFIC = [
     property var targetWindowHeight: root.slot ? root.slot.h : windowData?.size[1] * scale * heightRatio"""),
     ("modules/ii/overview/OverviewWidget.qml",
      """    property int draggingFromWorkspace: -1""",
-     """    // Each workspace's windows in a grid filling its cell, in reading order
+     """    // A KWin desktop spans every output, so each monitor's overview shows the
+    // windows on it. With the mmsimpulse workspace pool a workspace belongs to
+    // no monitor: its windows are on whichever one showed it last, and every
+    // monitor's overview shows them all.
+    function showsWindowOf(w) {
+        return WM.backend?.workspacePool === true || w.output === root.monitor?.name;
+    }
+
+    // Each workspace's windows in a grid filling its cell, in reading order
     // of where they really are, each scaled to fit its slot and never above
     // its real size. Keyed by window address; workspaces with one window are
     // left out and keep the real layout.
@@ -229,7 +237,7 @@ SPECIFIC = [
             return ({});
         const byWorkspace = {};
         for (const w of root.windows) {
-            if (w.output !== root.monitor?.name || !w.workspace)
+            if (!root.showsWindowOf(w) || !w.workspace)
                 continue;
             (byWorkspace[w.workspace.id] = byWorkspace[w.workspace.id] || []).push(w);
         }

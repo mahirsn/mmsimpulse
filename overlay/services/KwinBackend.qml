@@ -22,6 +22,8 @@ Scope {
     property var activeWorkspace: null
     property string activeOutput: ""
     property var outputs: []
+    // The KWin script keeps one pool of workspaces across monitors.
+    property bool workspacePool: false
 
     // Monitors come from Quickshell itself, which is already compositor
     // agnostic — no need to ask KWin. The `logical` shape matches NiriBackend
@@ -176,6 +178,7 @@ Scope {
                     root.activeWorkspace = byId[s.current] ?? null;
                     root.activeOutput = s.activeOutput ?? "";
                     root.outputs = s.outputs ?? [];
+                    root.workspacePool = s.pool ?? false;
                 } catch (e) {
                     console.log("[KwinBackend] parse error: " + e);
                 }
