@@ -5,11 +5,12 @@
 # own actions and deliberately binds nothing, while this is an explicit opt-in
 # that does bind keys.
 #
-# Most of it is KWin's own actions rather than anything of ours. "Switch to
-# Desktop N" already exists, already honours [Windows] PerOutputVirtualDesktops
-# (it resolves the active output), and is editable in System Settings. The one
-# gap is move-and-follow — Hyprland's Super+Shift+N follows the window, KWin's
-# "Window to Desktop N" does not — so those ten go through the bridge.
+# Switching (Meta+N, Meta+Ctrl+Left/Right) uses the mmsimpulse KWin script's
+# actions rather than KWin's "Switch to Desktop N": KWin's act on its active
+# output, which follows the last focused window, while these act on the monitor
+# under the mouse, as Hyprland's do. Sending a window (Meta+Alt+N) is KWin's
+# own action. Move-and-follow — Hyprland's Super+Shift+N follows the window,
+# KWin's "Window to Desktop N" does not — goes through the bridge.
 #
 # Bindings live in ~/.config/kglobalshortcutsrc, which is shared with the daily
 # session. `--uninstall` puts back what was displaced.
@@ -25,6 +26,8 @@ if [[ "${1:-}" == "--uninstall" ]]; then
     for i in "${!KEYS[@]}"; do
         n=$((i + 1))
         kw kwin "Switch to Desktop $n" "none,none,Switch to Desktop $n"
+        kwriteconfig6 --file kglobalshortcutsrc --group kwin \
+            --key "mmsimpulse: Switch to workspace $n" --delete 2>/dev/null || true
         kw kwin "Window to Desktop $n" "none,none,Window to Desktop $n"
         kwriteconfig6 --file kglobalshortcutsrc --group services \
             --group "$CONFIG-workspace$n.desktop" --key _launch --delete 2>/dev/null || true
@@ -42,6 +45,12 @@ if [[ "${1:-}" == "--uninstall" ]]; then
         kwriteconfig6 --file kglobalshortcutsrc --group kwin \
             --key "$swap" --delete 2>/dev/null || true
     done
+    for step in "Previous workspace" "Next workspace"; do
+        kwriteconfig6 --file kglobalshortcutsrc --group kwin \
+            --key "mmsimpulse: $step" --delete 2>/dev/null || true
+    done
+    kw kwin "Switch One Desktop to the Left" "Meta+Ctrl+Left,Meta+Ctrl+Left,Switch One Desktop to the Left"
+    kw kwin "Switch One Desktop to the Right" "Meta+Ctrl+Right,Meta+Ctrl+Right,Switch One Desktop to the Right"
     kw kwin "Window One Desktop to the Left" "Meta+Ctrl+Shift+Left,Meta+Ctrl+Shift+Left,Window One Desktop to the Left"
     kw kwin "Window One Desktop to the Right" "Meta+Ctrl+Shift+Right,Meta+Ctrl+Shift+Right,Window One Desktop to the Right"
     kbuildsycoca6 --noincremental >/dev/null 2>&1 || true
@@ -55,8 +64,9 @@ for i in "${!KEYS[@]}"; do
     n=$((i + 1))
     key="${KEYS[$i]}"
 
-    # Meta+N — switch. KWin's own action, so it follows the focused output.
-    kw kwin "Switch to Desktop $n" "Meta+$key,Meta+$key,Switch to Desktop $n"
+    # Meta+N — switch the monitor under the mouse (the KWin script's action).
+    kw kwin "Switch to Desktop $n" "none,none,Switch to Desktop $n"
+    kw kwin "mmsimpulse: Switch to workspace $n" "Meta+$key,none,mmsimpulse: Switch to workspace $n"
 
     # Meta+Alt+N — send the window without following.
     kw kwin "Window to Desktop $n" "Meta+Alt+$key,Meta+Alt+$key,Window to Desktop $n"
@@ -89,6 +99,12 @@ done
 for n in 1 2 3 4 5 6 7 8 9 0; do
     kw plasmashell "activate task manager entry $n" "none,none,Activate Task Manager Entry $n"
 done
+
+# Meta+Ctrl+arrows — previous / next workspace on the monitor under the mouse.
+kw kwin "Switch One Desktop to the Left" "none,Meta+Ctrl+Left,Switch One Desktop to the Left"
+kw kwin "Switch One Desktop to the Right" "none,Meta+Ctrl+Right,Switch One Desktop to the Right"
+kw kwin "mmsimpulse: Previous workspace" "Meta+Ctrl+Left,none,mmsimpulse: Previous workspace"
+kw kwin "mmsimpulse: Next workspace" "Meta+Ctrl+Right,none,mmsimpulse: Next workspace"
 
 # Meta+Shift+arrows were tiling swaps, and tiling is off.
 kw kwin "Swap Tiled Window Left" "none,none,Swap Tiled Window Left"
@@ -142,7 +158,8 @@ for i in range(10):
     n = i + 1
     s = switch[i]
     f = [k for k in follow[i] if k not in s]
-    print(f"kwin\tSwitch to Desktop {n}\t" + " ".join(str(META + k) for k in s))
+    print(f"kwin\tSwitch to Desktop {n}\t")
+    print(f"kwin\tmmsimpulse: Switch to workspace {n}\t" + " ".join(str(META + k) for k in s))
     print(f"kwin\tWindow to Desktop {n}\t" + " ".join(str(META + ALT + k) for k in s))
     print(f"mmsimpulse-workspace{n}.desktop\t_launch\t" + " ".join(str(META + k) for k in f))
 PY
@@ -167,6 +184,11 @@ if busctl --user status org.kde.kglobalaccel >/dev/null 2>&1; then
         # shellcheck disable=SC2086
         live "$comp" "$action" $codes
     done < <(keycodes)
+    CTRL=$((0x04000000))
+    live kwin "Switch One Desktop to the Left"
+    live kwin "Switch One Desktop to the Right"
+    live kwin "mmsimpulse: Previous workspace" $((META + CTRL + LEFT))
+    live kwin "mmsimpulse: Next workspace" $((META + CTRL + RIGHT))
     live kwin "Window One Desktop to the Left" $((META + SHIFT + LEFT))
     live kwin "Window One Desktop to the Right" $((META + SHIFT + RIGHT))
 fi
@@ -174,10 +196,10 @@ fi
 cat <<MSG
 Workspace keys installed:
 
-  Meta+1..0          switch to workspace 1..10   (KWin, per focused monitor)
+  Meta+1..0          switch to workspace 1..10 on the monitor under the mouse
   Meta+Alt+1..0      send window there
   Meta+Shift+1..0    send window there and follow
-  Meta+Ctrl+Left/Right    previous / next workspace
+  Meta+Ctrl+Left/Right    previous / next workspace on the monitor under the mouse
   Meta+Shift+Left/Right   send window to previous / next workspace
 
 Existing bindings are only rewritten where they were dead: plasmashell's task

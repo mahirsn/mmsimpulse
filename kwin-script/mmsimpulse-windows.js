@@ -82,6 +82,9 @@ function push() {
     callDBus(SERVICE, PATH, IFACE, "Update", JSON.stringify({
         windows: windows,
         outputs: outputs,
+        // One pool of workspaces across monitors (see below): a workspace's
+        // windows are on whichever monitor last showed it.
+        pool: poolOn(),
         activeOutput: workspace.activeScreen ? workspace.activeScreen.name : ""
     }));
 }
@@ -296,6 +299,45 @@ function trackPool(w) {
 workspace.windowList().forEach(trackPool);
 workspace.windowAdded.connect(trackPool);
 pool(null, null);
+
+// Meta+1..0 and Meta+Ctrl+Left/Right act on the monitor under the mouse, as
+// Hyprland's do. KWin's own "Switch to Desktop N" acts on its active output,
+// which follows the last activated window rather than the mouse: a window
+// focused on the other monitor (one closing, an app raising itself) sent the
+// next Meta+N there while the mouse stayed on the laptop.
+// install-workspace-keys.sh moves the keys from KWin's actions to these.
+function screenUnderCursor() {
+    const p = workspace.cursorPos;
+    return monitors().find(s => {
+        const g = s.geometry;
+        return p.x >= g.x && p.x < g.x + g.width && p.y >= g.y && p.y < g.y + g.height;
+    }) || workspace.activeScreen;
+}
+
+function switchHere(desktop) {
+    const screen = screenUnderCursor();
+    if (desktop && screen)
+        workspace.setCurrentDesktopForScreen(desktop, screen);
+}
+
+function stepHere(by) {
+    const desktops = workspace.desktops;
+    const screen = screenUnderCursor();
+    if (!screen || desktops.length === 0)
+        return;
+    const i = desktops.indexOf(workspace.currentDesktopForScreen(screen));
+    switchHere(desktops[(i + by + desktops.length) % desktops.length]);
+}
+
+for (let n = 1; n <= 10; n++) {
+    registerShortcut("mmsimpulse: Switch to workspace " + n,
+                     "mmsimpulse: Switch to workspace " + n + " on the monitor under the mouse",
+                     "", () => switchHere(workspace.desktops.find(d => d.x11DesktopNumber === n)));
+}
+registerShortcut("mmsimpulse: Previous workspace",
+                 "mmsimpulse: Previous workspace on the monitor under the mouse", "", () => stepHere(-1));
+registerShortcut("mmsimpulse: Next workspace",
+                 "mmsimpulse: Next workspace on the monitor under the mouse", "", () => stepHere(1));
 
 // Super+H: hide the active window from screen sharing and recording (KWin's
 // "exclude from capture"), and show it again. Registered here rather than as a

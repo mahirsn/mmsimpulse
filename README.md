@@ -61,15 +61,16 @@ does bind keys:
 
 | | |
 |---|---|
-| `Meta+1`..`0` | switch workspace |
+| `Meta+1`..`0` | switch workspace on the monitor under the mouse |
 | `Meta+Alt+1`..`0` | send window there |
 | `Meta+Shift+1`..`0` | send window there and follow |
-| `Meta+Ctrl+Left/Right` | previous / next workspace |
+| `Meta+Ctrl+Left/Right` | previous / next workspace on the monitor under the mouse |
 | `Meta+Shift+Left/Right` | send window to previous / next |
 
-Most of these are KWin's own actions, so they honour
-`kwinrc [Windows] PerOutputVirtualDesktops` — turn it on for per-monitor
-workspaces, the way Hyprland behaves.
+Switching goes through the mmsimpulse KWin script and acts on the monitor
+under the mouse, as in Hyprland; KWin's own "Switch to Desktop N" acts on
+whichever monitor last had a focused window. Turn on
+`kwinrc [Windows] PerOutputVirtualDesktops` for per-monitor workspaces.
 
 With it on, the workspaces are one pool shared by every monitor, as in
 Hyprland: workspace 3 is the same workspace whichever monitor asks for it, its
