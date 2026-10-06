@@ -588,6 +588,17 @@ SPECIFIC = [
 
     component BigRecorderButton: RippleButton {"""),
 
+    # Closing an overlay widget handed its content to the next one: close
+    # Resources and the Notes widget showed the CPU graph, the one after it
+    # Notes. A list<var> holds its entries as variant maps, ScriptModel's
+    # objectProp cannot read "identifier" off those, and so the open list is
+    # diffed by position: the rows after the closed one get the next row's
+    # data while each keeps the widget it was built as. A plain JS array keeps
+    # them objects, and the diff then removes the right row.
+    ("modules/ii/overlay/OverlayContext.qml",
+     """    readonly property list<var> availableWidgets: [""",
+     """    readonly property var availableWidgets: ["""),
+
     # --- overlay: quick settings and media widgets ----------------------------
     # Two widgets from overlay/overlayWidgets: the sidebar's toggles worth
     # reaching over a game, and the media popup's player. Each overlay widget
