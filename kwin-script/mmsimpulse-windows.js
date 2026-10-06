@@ -122,9 +122,9 @@ workspace.currentDesktopChanged.connect(push);
 // With [Windows] PerOutputVirtualDesktops each output shows its own desktop,
 // but KWin still keeps a window where it is: desktop 3 on the laptop and
 // desktop 3 on the monitor are two separate sets of windows. Here a desktop's
-// windows go to whichever output shows it, and asking for a desktop another
-// output is showing swaps the two, so workspace 3 is reachable from anywhere
-// and there is only one of it.
+// windows go to whichever output shows it, so there is only one workspace 3.
+// Asking for a workspace another monitor is showing does not take it from
+// there: the focus goes to that monitor instead, as in Hyprland.
 //
 // Without per-output desktops every output shows the same one, and gathering
 // its windows onto one of them would empty the others, so nothing here runs.
@@ -180,14 +180,27 @@ function freeDesktop(forScreen) {
     return free.find(d => !used.includes(d)) || free[0] || null;
 }
 
-// Two outputs showing the same desktop: the one that just changed keeps it and
-// the other takes the desktop it left, or else one nobody is showing.
+// Two monitors showing the same desktop. When one asked for it (Meta+N, the
+// bar, the overview), it goes back to the desktop it left and the focus moves
+// to the monitor that has it. Otherwise (a monitor plugged in, the script
+// loading) the active monitor keeps it and the other takes a free one.
 function resolveDuplicates(changed, left) {
     const screens = monitors();
     const keep = changed || workspace.activeScreen;
     if (isShare(keep))
         return;
     const want = workspace.currentDesktopForScreen(keep);
+    if (changed) {
+        const holder = screens.find(s => s !== changed && workspace.currentDesktopForScreen(s) === want);
+        if (!holder)
+            return;
+        const taken = screens.filter(s => s !== changed).map(s => workspace.currentDesktopForScreen(s));
+        const back = left && !taken.includes(left) ? left : freeDesktop(changed);
+        if (back)
+            showDesktop(back, changed);
+        focusScreen(holder);
+        return;
+    }
     for (let i = 0; i < screens.length; i++) {
         const other = screens[i];
         if (other === keep || workspace.currentDesktopForScreen(other) !== want)
@@ -227,9 +240,11 @@ function pool(changed, left) {
 function keepFocusOnScreen(focused) {
     if (!isShare(workspace.activeScreen))
         return;
+    focusScreen(!isShare(focused) && workspace.screens.includes(focused) ? focused : monitors()[0]);
+}
+
+function focusScreen(target) {
     const screens = workspace.screens;
-    const target = !isShare(focused) && screens.includes(focused)
-        ? focused : monitors()[0];
     for (let i = 0; target && i < screens.length && workspace.activeScreen !== target; i++)
         workspace.slotSwitchToNextScreen();
 }

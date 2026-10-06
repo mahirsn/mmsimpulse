@@ -74,8 +74,8 @@ workspaces, the way Hyprland behaves.
 With it on, the workspaces are one pool shared by every monitor, as in
 Hyprland: workspace 3 is the same workspace whichever monitor asks for it, its
 windows go to the monitor showing it, and asking for one that another monitor
-is showing swaps the two. Plain KWin keeps a separate set of windows per
-monitor instead.
+is showing moves the focus to that monitor rather than taking the workspace
+from it. Plain KWin keeps a separate set of windows per monitor instead.
 
 ## Another shell
 
