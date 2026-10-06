@@ -754,6 +754,92 @@ import qs.modules.ii.overlay.obs"""),
      """    x: Math.round(Math.max(0, Math.min(persistentStateEntry.x, (root.parent?.width ?? Infinity) - root.width))) // Round or it'll be blurry
     y: Math.round(Math.max(0, Math.min(persistentStateEntry.y, (root.parent?.height ?? Infinity) - root.height))) // Round or it'll be blurry"""),
 
+    # Holding Ctrl in the overlay shows the canvas grid, and a widget dragged
+    # meanwhile lands on it: the handler moves an invisible stand-in and the
+    # widget follows it from line to line, its frame (not the resize margin
+    # around it) on the grid. Without Ctrl it follows the stand-in exactly.
+    ("modules/ii/overlay/OverlayContext.qml",
+     """    property list<string> pinnedWidgetIdentifiers: []""",
+     """    property list<string> pinnedWidgetIdentifiers: []
+    property bool snapToGrid: false"""),
+    ("modules/ii/overlay/OverlayContent.qml",
+     """        if (event.key === Qt.Key_Escape) {
+            GlobalStates.overlayOpen = false;
+        }
+    }""",
+     """        if (event.key === Qt.Key_Escape) {
+            GlobalStates.overlayOpen = false;
+        }
+        // Ctrl's own press may not carry the modifier yet, nor its release
+        // have dropped it, so the key itself decides those two.
+        OverlayContext.snapToGrid = event.key === Qt.Key_Control || (event.modifiers & Qt.ControlModifier) !== 0;
+    }
+    Keys.onReleased: (event) => {
+        OverlayContext.snapToGrid = event.key !== Qt.Key_Control && (event.modifiers & Qt.ControlModifier) !== 0;
+    }
+    // A release while the overlay was away never arrives.
+    Connections {
+        target: GlobalStates
+        function onOverlayOpenChanged() {
+            OverlayContext.snapToGrid = false;
+        }
+    }"""),
+    ("modules/ii/overlay/OverlayContent.qml",
+     """    WidgetCanvas {
+        anchors.fill: parent""",
+     """    WidgetCanvas {
+        id: canvas
+        anchors.fill: parent
+        showGrid: OverlayContext.snapToGrid && GlobalStates.overlayOpen"""),
+    ("modules/ii/overlay/StyledOverlayWidget.qml",
+     """    DragHandler {
+        id: dragHandler
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        target: (root.draggable && !root.resizing) ? root : null""",
+     """    Item {
+        id: dragStandIn
+        parent: root.parent
+        width: root.width
+        height: root.height
+    }
+    Binding {
+        target: dragStandIn
+        property: "x"
+        value: root.x
+        when: !dragHandler.active
+        restoreMode: Binding.RestoreNone
+    }
+    Binding {
+        target: dragStandIn
+        property: "y"
+        value: root.y
+        when: !dragHandler.active
+        restoreMode: Binding.RestoreNone
+    }
+    function snapToGrid(pos, max) {
+        const grid = root.findCanvas(root.parent)?.gridSize ?? 24;
+        const snapped = Math.round((pos + root.resizeMargin) / grid) * grid - root.resizeMargin;
+        return Math.max(0, Math.min(snapped, max));
+    }
+    Binding {
+        target: root
+        property: "x"
+        value: OverlayContext.snapToGrid ? root.snapToGrid(dragStandIn.x, root.parent.width - root.width) : dragStandIn.x
+        when: dragHandler.active && !root.resizing
+        restoreMode: Binding.RestoreNone
+    }
+    Binding {
+        target: root
+        property: "y"
+        value: OverlayContext.snapToGrid ? root.snapToGrid(dragStandIn.y, root.parent.height - root.height) : dragStandIn.y
+        when: dragHandler.active && !root.resizing
+        restoreMode: Binding.RestoreNone
+    }
+    DragHandler {
+        id: dragHandler
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        target: (root.draggable && !root.resizing) ? dragStandIn : null"""),
+
     # The FPS limiter appends to MangoHud's config, and appending to a file in
     # a directory that does not exist yet does nothing: on a machine where
     # MangoHud was never configured the limit was silently dropped.
