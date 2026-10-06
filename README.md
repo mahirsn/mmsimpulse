@@ -150,6 +150,15 @@ for screen sources it cannot provide, the frontend reports none at all, and the
 share picker never appears. The installer writes a `kde-portals.conf` beside it,
 which outranks it and applies only here.
 
+### Sharing a workspace
+
+Pick **Share virtual screen** in an app's screen-share dialog (OBS, Discord, a
+browser) and open **Share workspace** in the Super+Z overlay. Whichever
+workspace it is set to is what the app receives, live, while you work on
+another one; it starts on an empty workspace, and sending a window there
+(`Meta+Alt+N`) puts it in the stream. When the stream ends the windows come
+back. This needs `PerOutputVirtualDesktops` on.
+
 ## How it works
 
 The skin routes compositor access through `services/WM.qml`, which already has
@@ -186,10 +195,11 @@ developer's `~/.config`.
 
 ```
 bin/mmsimpulse-kwin-bridge      KWin <-> shell bridge daemon
-kwin-script/                    KWin script that publishes the window list
+kwin-script/                    KWin script: window list, workspace pool, screen sharing
 overlay/services/               KwinBackend.qml, and WM.qml and
                                 CompositorGlobalShortcut.qml with a KWin branch
-overlay/overlayWidgets/         quick settings and media widgets for the Super+Z overlay
+overlay/overlayWidgets/         widgets for the Super+Z overlay: quick settings, media,
+                                OBS, Wi-Fi, Bluetooth, workspace sharing
 overlay/bin/noctalia            shim for a fork's built-in shell shortcuts
 overlay/patch-shell.py          scripted edits to the rest of the skin
 session/                        session script and login-manager entry

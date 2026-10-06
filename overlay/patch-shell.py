@@ -642,7 +642,7 @@ import qs.modules.ii.overlay.media"""),
                     property bool pinned: false
                     property bool clickthrough: false
                     property real x: 450
-                    property real y: 420
+                    property real y: 480
                     property real width: 440
                     property real height: 160
                 }"""),
@@ -672,6 +672,56 @@ import qs.modules.ii.overlay.obs"""),
                     property real height: 360
                 }
                 property JsonObject media: JsonObject {"""),
+
+    # Wi-Fi and Bluetooth get widgets of their own, the sidebar's two dialogs
+    # (overlay/overlayWidgets/wifi, bluetooth), and Share workspace picks what
+    # a "Share virtual screen" stream shows (overlay/overlayWidgets/
+    # workspaceShare, with the KWin script's workspace pool behind it).
+    ("modules/ii/overlay/OverlayContext.qml",
+     """        { identifier: "obs", materialSymbol: "videocam" },""",
+     """        { identifier: "obs", materialSymbol: "videocam" },
+        { identifier: "wifi", materialSymbol: "wifi" },
+        { identifier: "bluetooth", materialSymbol: "bluetooth" },
+        { identifier: "workspaceShare", materialSymbol: "screen_share" },"""),
+    ("modules/ii/overlay/OverlayWidgetDelegateChooser.qml",
+     """import qs.modules.ii.overlay.obs""",
+     """import qs.modules.ii.overlay.obs
+import qs.modules.ii.overlay.wifi
+import qs.modules.ii.overlay.bluetooth
+import qs.modules.ii.overlay.workspaceShare"""),
+    ("modules/ii/overlay/OverlayWidgetDelegateChooser.qml",
+     """    DelegateChoice { roleValue: "obs"; Obs {} }""",
+     """    DelegateChoice { roleValue: "obs"; Obs {} }
+    DelegateChoice { roleValue: "wifi"; WifiNetworks {} }
+    DelegateChoice { roleValue: "bluetooth"; BluetoothDevices {} }
+    DelegateChoice { roleValue: "workspaceShare"; WorkspaceShare {} }"""),
+    ("modules/common/Persistent.qml",
+     """                property JsonObject obs: JsonObject {""",
+     """                property JsonObject wifi: JsonObject {
+                    property bool pinned: false
+                    property bool clickthrough: false
+                    property real x: 450
+                    property real y: 700
+                    property real width: 340
+                    property real height: 300
+                }
+                property JsonObject bluetooth: JsonObject {
+                    property bool pinned: false
+                    property bool clickthrough: false
+                    property real x: 850
+                    property real y: 700
+                    property real width: 340
+                    property real height: 300
+                }
+                property JsonObject workspaceShare: JsonObject {
+                    property bool pinned: false
+                    property bool clickthrough: false
+                    property real x: 1220
+                    property real y: 640
+                    property real width: 260
+                    property real height: 170
+                }
+                property JsonObject obs: JsonObject {"""),
 
     # Resources gains a tab per GPU next to CPU, RAM and swap, with its load
     # graph and, under the percentage, memory, temperature and fan speed. The

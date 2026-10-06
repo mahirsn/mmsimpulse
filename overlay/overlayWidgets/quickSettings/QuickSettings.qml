@@ -12,8 +12,8 @@ import qs.modules.ii.overlay
 import qs.modules.ii.sidebarRight.quickToggles.androidStyle
 
 // The sidebar's own toggles, in a box that stays over a game. Only the ones
-// worth reaching without leaving it: mute, silence notifications, power
-// profile, night light and the GPU MUX.
+// worth reaching without leaving it: Wi-Fi, Bluetooth, mute, silence
+// notifications, power profile, night light and the GPU MUX.
 StyledOverlayWidget {
     id: root
     title: Translation.tr("Quick settings")
@@ -30,6 +30,8 @@ StyledOverlayWidget {
         visible: false
     }
 
+    NetworkToggle { id: networkToggle }
+    BluetoothToggle { id: bluetoothToggle }
     MicToggle { id: micToggle }
     AudioToggle { id: audioToggle }
     NotificationToggle { id: notificationToggle }
@@ -45,7 +47,9 @@ StyledOverlayWidget {
         mainAction: () => { gpu.asking = true }
     }
 
-    readonly property var models: [micToggle, audioToggle, notificationToggle, powerToggle, nightLightToggle]
+    readonly property var models: [networkToggle]
+        .concat(bluetoothToggle.available ? [bluetoothToggle] : [])
+        .concat([micToggle, audioToggle, notificationToggle, powerToggle, nightLightToggle])
         .concat(gpu.mode >= 0 ? [gpuToggle] : [])
     readonly property var rows: {
         const out = [];
@@ -58,11 +62,18 @@ StyledOverlayWidget {
     minimumHeight: rows.length * cellHeight + (rows.length - 1) * spacing + innerPadding * 2
 
     // Where the sidebar opens a dialog, the overlay has a widget for it.
+    function openWidget(identifier) {
+        if (!Persistent.states.overlay.open.includes(identifier))
+            Persistent.states.overlay.open.push(identifier);
+    }
     function openMenu(model) {
-        if (model === micToggle || model === audioToggle) {
+        if (model === networkToggle) {
+            root.openWidget("wifi");
+        } else if (model === bluetoothToggle) {
+            root.openWidget("bluetooth");
+        } else if (model === micToggle || model === audioToggle) {
             Persistent.states.overlay.volumeMixer.tabIndex = (model === micToggle) ? 1 : 0;
-            if (!Persistent.states.overlay.open.includes("volumeMixer"))
-                Persistent.states.overlay.open.push("volumeMixer");
+            root.openWidget("volumeMixer");
         } else {
             model.mainAction();
         }
