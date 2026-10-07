@@ -124,6 +124,30 @@ else
     fi
 fi
 
+# --- workspace-sharing effect -----------------------------------------------
+# A compiled KWin plugin, so it has to match the installed KWin. The Arch
+# package builds it; from a checkout it is built here, when it is missing or
+# older than KWin (KWin was updated). Needs cmake, extra-cmake-modules and
+# KWin's development headers; without them the rest still works, minus
+# workspace sharing.
+PLUGINS="$(qmake6 -query QT_INSTALL_PLUGINS 2>/dev/null || qtpaths6 --query QT_INSTALL_PLUGINS 2>/dev/null || true)"
+EFFECT="$PLUGINS/kwin/effects/plugins/mmsimpulse_workspaceshare.so"
+owned_by_package() { command -v pacman >/dev/null && pacman -Qqo "$1" >/dev/null 2>&1; }
+if [[ -n "$PLUGINS" ]] && ! owned_by_package "$EFFECT" \
+   && { [[ ! -e "$EFFECT" ]] || [[ "$EFFECT" -ot "$(command -v kwin_wayland)" ]]; }; then
+    echo "==> workspace-sharing effect (sudo to install)"
+    BUILD="$(mktemp -d)"
+    if cmake -S "$REPO/kwin-effect" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr >"$BUILD.log" 2>&1 \
+       && cmake --build "$BUILD" >>"$BUILD.log" 2>&1 \
+       && sudo cmake --install "$BUILD" >>"$BUILD.log" 2>&1; then
+        rm -rf "$BUILD" "$BUILD.log"
+    else
+        echo "    not built (see $BUILD.log); workspace sharing needs cmake," >&2
+        echo "    extra-cmake-modules and KWin's development headers" >&2
+        rm -rf "$BUILD"
+    fi
+fi
+
 # --- portal backend --------------------------------------------------------
 # xdg-desktop-portal reads ~/.config/xdg-desktop-portal/portals.conf for every
 # session, and a machine that also runs Hyprland usually has one pinning

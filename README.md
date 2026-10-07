@@ -8,7 +8,14 @@ KWin session running the end-4 illogical-impulse shell, with Hyprland-style work
 
 ## Install
 
-Arch:
+Arch, from the AUR:
+
+```
+paru -S mmsimpulse-git
+mmsimpulse-install
+```
+
+Arch, from source:
 
 ```
 git clone https://github.com/mahirsn/mmsimpulse
@@ -17,15 +24,19 @@ makepkg -si
 mmsimpulse-install
 ```
 
-Log out and pick **mmsimpulse**. Rebuild after a KWin update; the workspace-sharing effect is built against the installed KWin.
+Other distributions: install KWin 6, kglobalaccel, Quickshell, xdg-desktop-portal-kde, python-dbus, python-gobject, rsync, jq, ImageMagick, wl-clipboard, libnotify and Spectacle from your package manager, plus cmake, extra-cmake-modules and the KWin development headers for workspace sharing. Then:
+
+```
+git clone https://github.com/mahirsn/mmsimpulse
+cd mmsimpulse
+./install.sh
+```
+
+Log out and pick **mmsimpulse**. After a KWin update, reinstall the package (Arch) or run `./install.sh` again: the workspace-sharing effect is built against the installed KWin.
 
 ## Keys
 
-`Meta+Space` launcher, `Meta+Z` overlay. Workspace keys:
-
-```
-/usr/share/mmsimpulse/shortcuts/install-workspace-keys.sh
-```
+`Meta+Space` launcher, `Meta+Z` overlay. The installer binds the workspace keys:
 
 ```
 Meta+1..0               switch workspace (monitor under the mouse)
