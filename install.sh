@@ -183,5 +183,4 @@ Done. Log out and pick "mmsimpulse" in SDDM.
 Any other session on this machine is untouched.
 
 Iterate without logging out:  pkill -f "qs -c $CONFIG"; qs -c $CONFIG
-Checklist:                    $REPO/TESTING.md
 MSG
