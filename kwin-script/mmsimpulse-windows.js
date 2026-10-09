@@ -224,6 +224,8 @@ function resolveDuplicates(changed, left) {
         const back = left && !taken.includes(left) ? left : freeDesktop(changed);
         if (back)
             showDesktop(back, changed);
+        // The pointer goes along: Meta+N acts on the monitor under it.
+        callDBus("org.kde.KWin", "/MmsimpulsePointer", "org.mmsimpulse.Pointer", "WarpToScreen", holder.name);
         focusScreen(holder);
         return;
     }

@@ -13,6 +13,11 @@
     kept paintable here, and kept off the monitors they would otherwise
     appear on.
 
+    It also moves the pointer for the shell: Meta+N for a workspace another
+    monitor shows sends the pointer to that monitor, as Hyprland does. KWin
+    scripts cannot move the pointer, so the script asks here over D-Bus, and
+    this calls the same warp KWin uses itself.
+
     SPDX-License-Identifier: GPL-2.0-or-later
 */
 
@@ -21,8 +26,10 @@
 #include "effect/effect.h"
 #include "effect/effecthandler.h"
 #include "effect/effectwindow.h"
+#include "input.h"
 #include "scene/scene.h"
 
+#include <QDBusConnection>
 #include <QHash>
 
 namespace KWin
@@ -31,6 +38,7 @@ namespace KWin
 class WorkspaceShareEffect : public Effect
 {
     Q_OBJECT
+    Q_CLASSINFO("D-Bus Interface", "org.mmsimpulse.Pointer")
 
 public:
     WorkspaceShareEffect()
@@ -49,6 +57,8 @@ public:
             watch(w);
         }
         update();
+        QDBusConnection::sessionBus().registerObject(QStringLiteral("/MmsimpulsePointer"), this,
+                                                     QDBusConnection::ExportScriptableSlots);
     }
 
     static bool supported()
@@ -123,6 +133,16 @@ public:
             effects->drawWindow(renderTarget, viewport, w,
                                 PAINT_WINDOW_TRANSFORMED | PAINT_WINDOW_TRANSLUCENT | PAINT_WINDOW_OPAQUE,
                                 viewport.mapToDeviceCoordinatesAligned(screen->geometry()), data);
+        }
+    }
+
+public Q_SLOTS:
+    // To the middle of the named monitor.
+    Q_SCRIPTABLE void WarpToScreen(const QString &name)
+    {
+        LogicalOutput *screen = effects->findScreen(name);
+        if (screen && input()->supportsPointerWarping()) {
+            input()->warpPointer(screen->geometry().center());
         }
     }
 

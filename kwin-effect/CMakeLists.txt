@@ -11,11 +11,11 @@ include(KDECMakeSettings)
 include(KDECompilerSettings NO_POLICY_SCOPE)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Quick Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Core DBus Gui Quick Widgets)
 find_package(KF6 REQUIRED COMPONENTS CoreAddons)
 find_package(KWin REQUIRED COMPONENTS kwineffects)
 
 kcoreaddons_add_plugin(mmsimpulse_workspaceshare
     SOURCES workspaceshare.cpp
     INSTALL_NAMESPACE "kwin/effects/plugins")
-target_link_libraries(mmsimpulse_workspaceshare KWin::kwin)
+target_link_libraries(mmsimpulse_workspaceshare KWin::kwin Qt6::DBus)
