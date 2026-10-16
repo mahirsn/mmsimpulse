@@ -1500,6 +1500,62 @@ import qs.modules.ii.overlay.workspaceShare"""),
     ("modules/common/Directories.qml",
      '${Directories.config}/illogical-impulse',
      '${Directories.config}/mmsimpulse'),
+
+    # --- on-screen display ----------------------------------------------------
+    # The OSD draws a slider but closed as soon as the pointer entered it, and
+    # the slider wrote nothing back, so it could not be dragged. It now stays
+    # open while hovered and the slider sets the value it shows.
+    ("modules/ii/onScreenDisplay/OsdValueIndicator.qml",
+     """    property alias to: valueProgressBar.to""",
+     """    property alias to: valueProgressBar.to
+    signal moved(real newValue)"""),
+    ("modules/ii/onScreenDisplay/OsdValueIndicator.qml",
+     """                stopIndicatorValues: []
+                value: root.value""",
+     """                stopIndicatorValues: []
+                value: root.value
+                onMoved: root.moved(value)"""),
+    ("modules/ii/onScreenDisplay/indicators/VolumeIndicator.qml",
+     """    name: Translation.tr("Volume")""",
+     """    name: Translation.tr("Volume")
+    onMoved: newValue => {
+        if (Audio.sink?.audio)
+            Audio.sink.audio.volume = newValue
+    }"""),
+    ("modules/ii/onScreenDisplay/indicators/BrightnessIndicator.qml",
+     """    value: root.brightnessMonitor?.brightness ?? 0.5""",
+     """    value: root.brightnessMonitor?.brightness ?? 0.5
+    onMoved: newValue => root.brightnessMonitor?.setBrightness(newValue)"""),
+    ("modules/ii/onScreenDisplay/indicators/GammaIndicator.qml",
+     """    value: Hyprsunset.gamma / 100 ?? 0.5""",
+     """    value: Hyprsunset.gamma / 100 ?? 0.5
+    onMoved: newValue => Hyprsunset.setGamma(Math.round(newValue * 100))"""),
+    ("modules/ii/onScreenDisplay/OnScreenDisplay.qml",
+     """    property string protectionMessage: \"\"""",
+     """    property string protectionMessage: \"\"
+    property bool hovered: false"""),
+    ("modules/ii/onScreenDisplay/OnScreenDisplay.qml",
+     """        GlobalStates.osdVolumeOpen = true;
+        osdTimeout.restart();""",
+     """        GlobalStates.osdVolumeOpen = true;
+        if (!root.hovered)
+            osdTimeout.restart();"""),
+    ("modules/ii/onScreenDisplay/OnScreenDisplay.qml",
+     """                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onEntered: GlobalStates.osdVolumeOpen = false
+                    }""",
+     """                    HoverHandler {
+                        onHoveredChanged: {
+                            root.hovered = hovered;
+                            if (hovered)
+                                osdTimeout.stop();
+                            else
+                                osdTimeout.restart();
+                        }
+                        Component.onDestruction: root.hovered = false
+                    }"""),
 ]
 
 # Hyprland-only cursor tweaks: harmless to keep, but they must not fire on KWin.
