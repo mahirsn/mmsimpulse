@@ -45,6 +45,8 @@ if [[ "${1:-}" == "--uninstall" ]]; then
         kwriteconfig6 --file kglobalshortcutsrc --group kwin \
             --key "$swap" --delete 2>/dev/null || true
     done
+    kwriteconfig6 --file kglobalshortcutsrc --group kwin \
+        --key "Show Desktop" --delete 2>/dev/null || true
     for step in "Previous workspace" "Next workspace"; do
         kwriteconfig6 --file kglobalshortcutsrc --group kwin \
             --key "mmsimpulse: $step" --delete 2>/dev/null || true
@@ -111,6 +113,10 @@ kw kwin "Swap Tiled Window Left" "none,none,Swap Tiled Window Left"
 kw kwin "Swap Tiled Window Right" "none,none,Swap Tiled Window Right"
 kw kwin "Window One Desktop to the Left" "Meta+Shift+Left,Meta+Ctrl+Shift+Left,Window One Desktop to the Left"
 kw kwin "Window One Desktop to the Right" "Meta+Shift+Right,Meta+Ctrl+Shift+Right,Window One Desktop to the Right"
+
+# Meta+D is KWin's Show Desktop. Here it only hides every window in front of an
+# empty wallpaper: this session has no desktop icons or widgets to show.
+kw kwin "Show Desktop" "none,Meta+D,Peek at Desktop"
 
 kbuildsycoca6 --noincremental >/dev/null 2>&1 || true
 
@@ -180,6 +186,7 @@ if busctl --user status org.kde.kglobalaccel >/dev/null 2>&1; then
     done
     live kwin "Swap Tiled Window Left"
     live kwin "Swap Tiled Window Right"
+    live kwin "Show Desktop"
     while IFS=$'\t' read -r comp action codes; do
         # shellcheck disable=SC2086
         live "$comp" "$action" $codes
@@ -203,6 +210,7 @@ Workspace keys installed:
   Meta+Shift+Left/Right   send window to previous / next workspace
 
 Existing bindings are only rewritten where they were dead: plasmashell's task
-manager entries (plasmashell never runs here) and the tiling swaps (tiling is
-off). They work right away.
+manager entries (plasmashell never runs here), the tiling swaps (tiling is
+off), and Meta+D, whose Show Desktop only hid every window here. They work
+right away.
 MSG
