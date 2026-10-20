@@ -89,6 +89,18 @@ Scope {
         const hh = (a.top && a.bottom) ? ah - m.top - m.bottom : w.height;
         const x = left + (a.left ? m.left : a.right ? aw - ww - m.right : (aw - ww) / 2);
         const y = top + (a.top ? m.top : a.bottom ? ah - hh - m.bottom : (ah - hh) / 2);
+        // A window that takes input only through a mask item (the overview is
+        // a full-screen window whose mask is its search column) is a hole only
+        // where that item is. A hole the size of the window would leave the
+        // catcher no input region at all, and the panel would never close.
+        const item = w.mask?.item;
+        if (item && w.contentItem) {
+            if (!item.visible || !(item.width > 0) || !(item.height > 0))
+                return null;
+            void [item.x, item.y]; // re-evaluate when the item moves
+            const p = item.mapToItem(w.contentItem, 0, 0);
+            return { x: x + p.x, y: y + p.y, width: item.width, height: item.height };
+        }
         return { x: x, y: y, width: ww, height: hh };
     }
 
