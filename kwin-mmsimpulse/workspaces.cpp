@@ -23,18 +23,20 @@ struct ExtWorkspaces::Group
     QSet<wl_resource *> outputs;
 };
 
+// One desktop as one group shows it: each monitor's group has its own object
+// for every desktop.
 struct ExtWorkspaces::Space
 {
     wl_resource *resource = nullptr;
     bool detached = false;
     Manager *manager = nullptr;
+    LogicalOutput *group = nullptr;
     VirtualDesktop *desktop = nullptr;
     bool sent = false;
+    bool entered = false;
     QString name;
     QList<uint32_t> coordinates;
     uint32_t state = 0;
-    bool inGroup = false;
-    LogicalOutput *group = nullptr;
 };
 
 struct ExtWorkspaces::Manager
@@ -43,7 +45,7 @@ struct ExtWorkspaces::Manager
     wl_client *client = nullptr;
     ExtWorkspaces *self = nullptr;
     QHash<LogicalOutput *, Group *> groups;
-    QHash<VirtualDesktop *, Space *> spaces;
+    QHash<QPair<LogicalOutput *, VirtualDesktop *>, Space *> spaces;
     // Requests wait for commit, so a batch of them applies at once.
     QList<std::function<void()>> pending;
 };
@@ -93,9 +95,10 @@ static const struct ext_workspace_handle_v1_interface s_spaceImpl = {
         if (s->detached || !s->manager->self)
             return;
         ExtWorkspaces *self = s->manager->self;
+        LogicalOutput *group = s->group;
         VirtualDesktop *desktop = s->desktop;
-        s->manager->pending << [self, desktop] {
-            self->activate(desktop);
+        s->manager->pending << [self, group, desktop] {
+            self->activate(group, desktop);
         };
     },
     // Only activate is offered: a desktop is left by showing another one,
@@ -176,7 +179,7 @@ void ExtWorkspaces::watchDesktop(VirtualDesktop *d)
     connect(d, &VirtualDesktop::x11DesktopNumberChanged, this, &ExtWorkspaces::refresh);
 }
 
-void ExtWorkspaces::activate(VirtualDesktop *desktop)
+void ExtWorkspaces::activate(LogicalOutput *group, VirtualDesktop *desktop)
 {
     VirtualDesktopManager *vdm = VirtualDesktopManager::self();
     if (!vdm->desktops().contains(desktop))
@@ -185,14 +188,13 @@ void ExtWorkspaces::activate(VirtualDesktop *desktop)
         vdm->setCurrent(desktop);
         return;
     }
-    // On the monitor it belongs to: the one showing it, or the one that last did.
-    LogicalOutput *output = m_home.value(desktop);
-    if (!workspace()->outputs().contains(output))
-        output = workspace()->activeOutput();
-    vdm->setCurrent(desktop, output);
+    // On the monitor whose group it was picked from, as the shell's own bar
+    // switches the monitor it is on.
+    if (workspace()->outputs().contains(group))
+        vdm->setCurrent(desktop, group);
 }
 
-ExtWorkspaces::Model ExtWorkspaces::model()
+ExtWorkspaces::Model ExtWorkspaces::model() const
 {
     VirtualDesktopManager *vdm = VirtualDesktopManager::self();
     const QList<LogicalOutput *> outputs = workspace()->outputs();
@@ -202,38 +204,16 @@ ExtWorkspaces::Model ExtWorkspaces::model()
     if (!options->isPerOutputVirtualDesktops()) {
         md.groups << nullptr;
         md.groupOutputs.insert(nullptr, outputs);
-        for (VirtualDesktop *d : std::as_const(md.desktops))
-            md.groupOf.insert(d, nullptr);
         if (VirtualDesktop *current = vdm->currentDesktop())
-            md.active << current;
+            md.active.insert({nullptr, current});
         return md;
     }
 
     for (LogicalOutput *o : outputs) {
         md.groups << o;
         md.groupOutputs.insert(o, {o});
-        if (VirtualDesktop *d = vdm->currentDesktop(o)) {
-            md.active << d;
-            m_home.insert(d, o);
-        }
-    }
-    for (auto it = m_home.begin(); it != m_home.end();) {
-        if (md.desktops.contains(it.key()))
-            ++it;
-        else
-            it = m_home.erase(it);
-    }
-    // A desktop no monitor has shown yet goes to the first one, so it can be
-    // reached from a bar at all.
-    for (VirtualDesktop *d : std::as_const(md.desktops)) {
-        LogicalOutput *home = m_home.value(d);
-        if (!outputs.contains(home)) {
-            if (outputs.isEmpty())
-                continue;
-            home = outputs.first();
-            m_home.insert(d, home);
-        }
-        md.groupOf.insert(d, home);
+        if (VirtualDesktop *d = vdm->currentDesktop(o))
+            md.active.insert({o, d});
     }
     return md;
 }
@@ -299,81 +279,68 @@ void ExtWorkspaces::sync(Manager *m)
         g->outputs = outputs;
     }
 
-    for (VirtualDesktop *d : md.desktops) {
-        Space *s = m->spaces.value(d);
-        if (!s) {
-            s = new Space;
-            s->manager = m;
-            s->desktop = d;
-            s->resource = wl_resource_create(m->client, &ext_workspace_handle_v1_interface,
-                                             wl_resource_get_version(m->resource), 0);
-            wl_resource_set_implementation(s->resource, &s_spaceImpl, s, spaceDestroyed);
-            m->spaces.insert(d, s);
-            ext_workspace_manager_v1_send_workspace(m->resource, s->resource);
-            ext_workspace_handle_v1_send_id(s->resource, d->id().toUtf8().constData());
-            ext_workspace_handle_v1_send_capabilities(s->resource, EXT_WORKSPACE_HANDLE_V1_WORKSPACE_CAPABILITIES_ACTIVATE);
-            changed = true;
-        }
-        if (!s->resource)
-            continue;
-        if (!s->sent || d->name() != s->name) {
-            s->name = d->name();
-            ext_workspace_handle_v1_send_name(s->resource, s->name.toUtf8().constData());
-            changed = true;
-        }
-        const QList<uint32_t> coordinates{d->x11DesktopNumber() - 1};
-        if (!s->sent || coordinates != s->coordinates) {
-            s->coordinates = coordinates;
-            wl_array array;
-            wl_array_init(&array);
-            for (uint32_t c : coordinates)
-                *static_cast<uint32_t *>(wl_array_add(&array, sizeof(uint32_t))) = c;
-            ext_workspace_handle_v1_send_coordinates(s->resource, &array);
-            wl_array_release(&array);
-            changed = true;
-        }
-        const uint32_t state = md.active.contains(d) ? EXT_WORKSPACE_HANDLE_V1_STATE_ACTIVE : 0;
-        if (!s->sent || state != s->state) {
-            s->state = state;
-            ext_workspace_handle_v1_send_state(s->resource, state);
-            changed = true;
-        }
-        s->sent = true;
-    }
-
-    // Membership, once every group it can move to exists.
-    for (VirtualDesktop *d : md.desktops) {
-        Space *s = m->spaces.value(d);
-        const bool wantIn = md.groupOf.contains(d);
-        LogicalOutput *want = md.groupOf.value(d);
-        if (s->inGroup && (!wantIn || s->group != want)) {
-            Group *old = m->groups.value(s->group);
-            if (old && old->resource && s->resource) {
-                ext_workspace_group_handle_v1_send_workspace_leave(old->resource, s->resource);
+    for (LogicalOutput *key : md.groups) {
+        Group *g = m->groups.value(key);
+        for (VirtualDesktop *d : md.desktops) {
+            Space *s = m->spaces.value({key, d});
+            if (!s) {
+                s = new Space;
+                s->manager = m;
+                s->group = key;
+                s->desktop = d;
+                s->resource = wl_resource_create(m->client, &ext_workspace_handle_v1_interface,
+                                                 wl_resource_get_version(m->resource), 0);
+                wl_resource_set_implementation(s->resource, &s_spaceImpl, s, spaceDestroyed);
+                m->spaces.insert({key, d}, s);
+                ext_workspace_manager_v1_send_workspace(m->resource, s->resource);
+                // Unique per group: the same desktop is one object in each.
+                const QString id = key ? d->id() + QLatin1Char('@') + key->name() : d->id();
+                ext_workspace_handle_v1_send_id(s->resource, id.toUtf8().constData());
+                ext_workspace_handle_v1_send_capabilities(s->resource, EXT_WORKSPACE_HANDLE_V1_WORKSPACE_CAPABILITIES_ACTIVATE);
                 changed = true;
             }
-            s->inGroup = false;
-        }
-        if (!s->inGroup && wantIn) {
-            Group *g = m->groups.value(want);
-            if (g && g->resource && s->resource) {
+            if (!s->resource)
+                continue;
+            if (!s->sent || d->name() != s->name) {
+                s->name = d->name();
+                ext_workspace_handle_v1_send_name(s->resource, s->name.toUtf8().constData());
+                changed = true;
+            }
+            const QList<uint32_t> coordinates{d->x11DesktopNumber() - 1};
+            if (!s->sent || coordinates != s->coordinates) {
+                s->coordinates = coordinates;
+                wl_array array;
+                wl_array_init(&array);
+                for (uint32_t c : coordinates)
+                    *static_cast<uint32_t *>(wl_array_add(&array, sizeof(uint32_t))) = c;
+                ext_workspace_handle_v1_send_coordinates(s->resource, &array);
+                wl_array_release(&array);
+                changed = true;
+            }
+            const uint32_t state = md.active.contains({key, d}) ? EXT_WORKSPACE_HANDLE_V1_STATE_ACTIVE : 0;
+            if (!s->sent || state != s->state) {
+                s->state = state;
+                ext_workspace_handle_v1_send_state(s->resource, state);
+                changed = true;
+            }
+            s->sent = true;
+            if (!s->entered && g && g->resource) {
                 ext_workspace_group_handle_v1_send_workspace_enter(g->resource, s->resource);
+                s->entered = true;
                 changed = true;
             }
-            s->inGroup = true;
-            s->group = want;
         }
     }
 
     for (auto it = m->spaces.begin(); it != m->spaces.end();) {
         Space *s = it.value();
-        if (md.desktops.contains(it.key())) {
+        if (md.groups.contains(it.key().first) && md.desktops.contains(it.key().second)) {
             ++it;
             continue;
         }
         if (s->resource) {
-            Group *g = s->inGroup ? m->groups.value(s->group) : nullptr;
-            if (g && g->resource)
+            Group *g = m->groups.value(s->group);
+            if (s->entered && g && g->resource)
                 ext_workspace_group_handle_v1_send_workspace_leave(g->resource, s->resource);
             ext_workspace_handle_v1_send_removed(s->resource);
             changed = true;
