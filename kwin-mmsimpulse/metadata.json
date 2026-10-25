@@ -1,0 +1,8 @@
+{
+    "KPlugin": {
+        "Description": "Window list and workspace protocols for shells written for other compositors (mmsimpulse)",
+        "EnabledByDefault": true,
+        "License": "GPL",
+        "Name": "mmsimpulse protocols"
+    }
+}

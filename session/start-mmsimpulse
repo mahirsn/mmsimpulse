@@ -15,28 +15,41 @@ set -uo pipefail
 
 CONFIG=mmsimpulse
 
-# Which Quickshell configuration provides the widgets. The session keeps its own
-# identity either way — the log, the Wayland socket and the bin directory are
-# still mmsimpulse — so only the shell changes. Pick one with MMSIMPULSE_SHELL,
-# or by writing its name into ~/.config/mmsimpulse/shell.
+# Which shell provides the widgets. The session keeps its own identity either
+# way — the log, the Wayland socket and the bin directory are still mmsimpulse —
+# so only the shell changes. Pick one with MMSIMPULSE_SHELL, or by writing its
+# name into ~/.config/mmsimpulse/shell.
+#
+# The name is a Quickshell configuration (quickshell/<name>/shell.qml), or a
+# profile: a file of that name in ~/.config/mmsimpulse/profiles or
+# ~/.local/share/mmsimpulse/profiles that says how to start a shell and what
+# each shortcut runs in it. The repository's profiles/ has the format.
 #
 # A session whose shell does not exist has no bar, no launcher and no way to
 # start anything, which is unrecoverable without a TTY. So a name that resolves
-# to no shell.qml falls back to ours rather than being taken at its word.
+# to neither falls back to ours rather than being taken at its word.
 SHELL_CONFIG="${MMSIMPULSE_SHELL:-}"
 [[ -n "$SHELL_CONFIG" ]] ||
     SHELL_CONFIG="$(head -n1 "$HOME/.config/$CONFIG/shell" 2>/dev/null | tr -d '[:space:]')"
 SHELL_CONFIG="${SHELL_CONFIG:-$CONFIG}"
+PROFILE=""
 if [[ "$SHELL_CONFIG" != "$CONFIG" ]]; then
     found=""
+    for dir in "${XDG_CONFIG_HOME:-$HOME/.config}/$CONFIG/profiles" "$HOME/.local/share/$CONFIG/profiles"; do
+        [[ -f "$dir/$SHELL_CONFIG" ]] && { PROFILE="$dir/$SHELL_CONFIG"; found=1; break; }
+    done
     for dir in "${XDG_CONFIG_HOME:-$HOME/.config}" /etc/xdg; do
-        [[ -f "$dir/quickshell/$SHELL_CONFIG/shell.qml" ]] && { found=1; break; }
+        [[ -z "$found" && -f "$dir/quickshell/$SHELL_CONFIG/shell.qml" ]] && { found=1; break; }
     done
     if [[ -z "$found" ]]; then
-        echo "Shell '$SHELL_CONFIG' has no shell.qml; falling back to $CONFIG" >&2
+        echo "Shell '$SHELL_CONFIG' has no profile and no shell.qml; falling back to $CONFIG" >&2
         SHELL_CONFIG="$CONFIG"
     fi
 fi
+# A profile line is `key=command`.
+profile() { [[ -n "$PROFILE" ]] && sed -n "s/^$1=//p" "$PROFILE" | tail -n1; }
+SHELL_CMD="$(profile start)"
+SHELL_CMD="${SHELL_CMD:-qs -c $SHELL_CONFIG}"
 
 LOG="$HOME/.local/share/$CONFIG.log"
 mkdir -p "$(dirname "$LOG")"
@@ -89,6 +102,36 @@ find_bin() {
 if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
     exec dbus-run-session -- "$0" "$@"
 fi
+
+# The shortcuts follow the shell. An entry install-shortcuts.sh marked as a
+# shell action runs the profile's command for it, or nothing when the profile
+# has none; a Quickshell configuration gets the IPC call ours answers.
+#
+# Done before the compositor starts: its global shortcut daemon reads each
+# entry once, when it registers it, and keeps that command for the session.
+# The service cache is rebuilt for the same reason when an entry changed.
+#
+# `env -u QT_QPA_PLATFORM` as in install-shortcuts.sh: a Quickshell IPC client
+# that inherits a QT_QPA_PLATFORM cannot reach the shell.
+for entry in "${XDG_DATA_HOME:-$HOME/.local/share}/applications/$CONFIG"-*.desktop; do
+    action="$(sed -n 's/^X-Mmsimpulse-Action=//p' "$entry" 2>/dev/null)"
+    [[ -n "$action" ]] || continue
+    if [[ -n "$PROFILE" ]]; then
+        cmd="$(profile "$action")"
+        cmd="${cmd:+env -u QT_QPA_PLATFORM $cmd}"
+        cmd="${cmd:-true}"
+    else
+        cmd="env -u QT_QPA_PLATFORM qs -c $SHELL_CONFIG ipc call $action trigger"
+    fi
+    grep -qxF "Exec=$cmd" "$entry" && continue
+    while IFS= read -r line; do
+        [[ "$line" == Exec=* ]] && line="Exec=$cmd"
+        printf '%s\n' "$line"
+    done <"$entry" >"$entry.new" && mv "$entry.new" "$entry"
+    shortcuts_changed=1
+done
+[[ -n "${shortcuts_changed:-}" ]] && command -v kbuildsycoca6 >/dev/null \
+    && kbuildsycoca6 --noincremental >/dev/null 2>&1
 
 # ---------------------------------------------------------------------------
 # Compositor
@@ -273,12 +316,21 @@ if command -v cliphist >/dev/null 2>&1 && command -v wl-paste >/dev/null 2>&1; t
     wl-paste --type image --watch cliphist store >/dev/null 2>&1 &
 fi
 
+# Our shell runs the KWin bridge itself (KwinBackend.qml) and reads the window
+# list from it. The bridge is also what loads the KWin script, and with it the
+# workspace pool across monitors and the Meta+1..0 keys, so for any other shell
+# the session runs it.
+[[ "$SHELL_CONFIG" != "$CONFIG" ]] && mmsimpulse-kwin-bridge >/dev/null 2>&1 &
+
 # ---------------------------------------------------------------------------
 # The shell, supervised
 # ---------------------------------------------------------------------------
 # `|| true` matters even without `set -e` here: it keeps a non-zero exit from
 # ending the loop that exists to restart the shell.
 (
+    # Ending the session ends the shell with it.
+    child=""
+    trap 'kill "$child" 2>/dev/null; exit' TERM
     while true; do
         # Re-check DISPLAY on every start. Whatever the shell launches inherits
         # its environment, so a session that came up before Xwayland had a
@@ -290,7 +342,9 @@ fi
             [[ -n "$DISPLAY" ]] && export DISPLAY \
                 && dbus-update-activation-environment --systemd DISPLAY 2>/dev/null
         fi
-        qs -c "$SHELL_CONFIG" >>"$LOG" 2>&1 || true
+        bash -c "exec $SHELL_CMD" >>"$LOG" 2>&1 &
+        child=$!
+        wait "$child"
         echo "$SHELL_CONFIG exited, restarting in 2s..." >&2
         sleep 2
     done

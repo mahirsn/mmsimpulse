@@ -80,6 +80,11 @@ while IFS= read -r line; do
     # X-KDE-Shortcuts is what makes kglobalacceld notice the entry at all, so
     # it has to carry a key. The binding written below is what decides whether
     # that key is actually live, and it is not.
+    #
+    # X-Mmsimpulse-Action marks a shell action: the session points its Exec at
+    # whichever shell it runs (start-mmsimpulse, "The shortcuts follow").
+    action=""
+    [[ -z "$cmd" ]] && action="X-Mmsimpulse-Action=$name"
     cat > "$APPDIR/$CONFIG-$name.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
@@ -89,6 +94,7 @@ NoDisplay=true
 Terminal=false
 X-KDE-GlobalAccel-CommandShortcut=true
 X-KDE-Shortcuts=$keys
+$action
 DESKTOP
 
     # Register the action unbound: the third field is the friendly name, the

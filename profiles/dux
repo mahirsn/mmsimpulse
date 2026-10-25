@@ -1,0 +1,15 @@
+# Dux Shell (formerly DankMaterialShell): https://github.com/duxlabs-dev/dux-shell
+# Use it with: echo dux > ~/.config/mmsimpulse/shell
+#
+# A profile is `key=command` lines. `start` starts the shell; every other key is
+# a shortcut from shortcuts/shortcuts.tsv and the command it runs. A shortcut
+# not listed does nothing in this shell.
+start=dms run
+searchToggle=dms ipc call spotlight toggle
+sidebarLeftToggle=dms ipc call dash toggle ""
+sidebarRightToggle=dms ipc call control-center toggle
+sessionToggle=dms ipc call powermenu toggle
+settingsToggle=dms ipc call settings toggle
+overviewClipboardToggle=dms ipc call clipboard toggle
+# The shell's own lock needs ext-session-lock-v1, which KWin does not have.
+lock=loginctl lock-session

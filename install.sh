@@ -100,6 +100,9 @@ install -m755 "$REPO"/bin/mmsimpulse-* "$BIN/"
 mkdir -p "$SHIM"
 install -m755 "$REPO/overlay/bin/noctalia" "$SHIM/"
 install -m755 "$REPO/overlay/bin/replay-saved" "$SHIM/"
+# How to run shells other than ours; the session reads them (start-mmsimpulse).
+mkdir -p "$HOME/.local/share/$CONFIG/profiles"
+install -m644 "$REPO"/profiles/* "$HOME/.local/share/$CONFIG/profiles/"
 
 # --- session script --------------------------------------------------------
 echo "==> session script -> $BIN/start-$CONFIG"
@@ -124,30 +127,37 @@ else
     fi
 fi
 
-# --- workspace-sharing effect -----------------------------------------------
-# A compiled KWin plugin, so it has to match the installed KWin. The Arch
-# package builds it; from a checkout it is built here, when it is missing or
-# older than KWin (KWin was updated) or than its source (the effect changed). Needs cmake, extra-cmake-modules and
-# KWin's development headers; without them the rest still works, minus
-# workspace sharing.
+# --- KWin plugins ------------------------------------------------------------
+# Compiled against KWin, so they have to match the installed KWin. The Arch
+# package builds them; from a checkout each is built here when it is missing or
+# older than KWin (KWin was updated) or than its source. Needs cmake,
+# extra-cmake-modules and KWin's development headers; the protocol plugin also
+# needs wayland-protocols and wlr-protocols. Without them the rest still works,
+# minus what the plugin does.
 PLUGINS="$(qmake6 -query QT_INSTALL_PLUGINS 2>/dev/null || qtpaths6 --query QT_INSTALL_PLUGINS 2>/dev/null || true)"
-EFFECT="$PLUGINS/kwin/effects/plugins/mmsimpulse_workspaceshare.so"
 owned_by_package() { command -v pacman >/dev/null && pacman -Qqo "$1" >/dev/null 2>&1; }
-if [[ -n "$PLUGINS" ]] && ! owned_by_package "$EFFECT" \
-   && { [[ ! -e "$EFFECT" ]] || [[ "$EFFECT" -ot "$(command -v kwin_wayland)" ]] \
-        || [[ "$EFFECT" -ot "$REPO/kwin-effect/workspaceshare.cpp" ]]; }; then
-    echo "==> workspace-sharing effect (sudo to install)"
-    BUILD="$(mktemp -d)"
-    if cmake -S "$REPO/kwin-effect" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr >"$BUILD.log" 2>&1 \
-       && cmake --build "$BUILD" >>"$BUILD.log" 2>&1 \
-       && sudo cmake --install "$BUILD" >>"$BUILD.log" 2>&1; then
-        rm -rf "$BUILD" "$BUILD.log"
+build_kwin_plugin() { # source dir, installed file, what it gives
+    local src="$REPO/$1" so="$PLUGINS/$2"
+    [[ -n "$PLUGINS" ]] && ! owned_by_package "$so" || return 0
+    [[ ! -e "$so" || "$so" -ot "$(command -v kwin_wayland)" ]] \
+        || [[ -n "$(find "$src" -newer "$so" -print -quit)" ]] || return 0
+    echo "==> $1 (sudo to install)"
+    local build
+    build="$(mktemp -d)"
+    if cmake -S "$src" -B "$build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr >"$build.log" 2>&1 \
+       && cmake --build "$build" >>"$build.log" 2>&1 \
+       && sudo cmake --install "$build" >>"$build.log" 2>&1; then
+        rm -rf "$build" "$build.log"
     else
-        echo "    not built (see $BUILD.log); workspace sharing needs cmake," >&2
+        echo "    not built (see $build.log); $3 needs cmake," >&2
         echo "    extra-cmake-modules and KWin's development headers" >&2
-        rm -rf "$BUILD"
+        rm -rf "$build"
     fi
-fi
+}
+build_kwin_plugin kwin-effect kwin/effects/plugins/mmsimpulse_workspaceshare.so "workspace sharing"
+# Window list and workspaces for shells written for other compositors. KWin
+# loads it at its next start.
+build_kwin_plugin kwin-mmsimpulse kwin/plugins/kwin-mmsimpulse.so "other shells' window list and workspaces"
 
 # --- portal backend --------------------------------------------------------
 # xdg-desktop-portal reads ~/.config/xdg-desktop-portal/portals.conf for every

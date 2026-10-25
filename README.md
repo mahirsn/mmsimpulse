@@ -24,7 +24,7 @@ makepkg -si
 mmsimpulse-install
 ```
 
-Other distributions: install KWin 6, kglobalaccel, Quickshell, xdg-desktop-portal-kde, python-dbus, python-gobject, rsync, jq, ImageMagick, wl-clipboard, libnotify and Spectacle from your package manager, plus cmake, extra-cmake-modules and the KWin development headers for workspace sharing. Then:
+Other distributions: install KWin 6, kglobalaccel, Quickshell, xdg-desktop-portal-kde, python-dbus, python-gobject, rsync, jq, ImageMagick, wl-clipboard, libnotify and Spectacle from your package manager, plus cmake, extra-cmake-modules, wayland-protocols, wlr-protocols and the KWin development headers for the KWin plugins. Then:
 
 ```
 git clone https://github.com/mahirsn/mmsimpulse
@@ -32,7 +32,7 @@ cd mmsimpulse
 ./install.sh
 ```
 
-Log out and pick **mmsimpulse**. After a KWin update, reinstall the package (Arch) or run `./install.sh` again: the workspace-sharing effect is built against the installed KWin.
+Log out and pick **mmsimpulse**. After a KWin update, reinstall the package (Arch) or run `./install.sh` again: the KWin plugins are built against the installed KWin.
 
 ## Keys
 
@@ -48,3 +48,12 @@ Meta+Ctrl+Left/Right    previous / next workspace
 ## Workspace sharing
 
 Pick **Share virtual screen** in a screen-share dialog. The app gets the workspace you are on, live, even after you switch away. The overlay's **Share workspace** picks another one.
+
+## Other shells
+
+KWin gets the window-list and workspace protocols that shells written for wlroots compositors, niri or Hyprland use (`zwlr_foreign_toplevel_management_v1`, `ext_workspace_v1`), so their task bars and workspace widgets work here too. To run another shell in this session, write its name into `~/.config/mmsimpulse/shell`:
+
+- a Quickshell config (`~/.config/quickshell/<name>/shell.qml`), or
+- a profile in `~/.config/mmsimpulse/profiles/<name>`: how to start the shell and what each shortcut runs in it. `profiles/dux` (Dux Shell) is an example.
+
+The lock screen stays KDE's: KWin has no `ext_session_lock_v1`.
