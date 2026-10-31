@@ -38,7 +38,7 @@ Pick a shell (below), log out and pick **mmsimpulse**. After a KWin update, rein
 
 Write the shell's name into `~/.config/mmsimpulse/shell`. The name is:
 
-- a profile in `~/.config/mmsimpulse/profiles/<name>`: how to start the shell and what each shortcut runs in it. `profiles/dux` (Dux Shell) is an example and documents the format, or
+- a profile in `~/.config/mmsimpulse/profiles/<name>`: how to start the shell and what each shortcut runs in it. `profiles/dux` (Dux Shell, which documents the format) and `profiles/noctalia` (Noctalia) come with it, or
 - a Quickshell config (`~/.config/quickshell/<name>/shell.qml`).
 
 Without a shell the session still starts, with KWin, Alt+Tab and `Meta+Return` for a terminal.
