@@ -92,21 +92,23 @@ public:
         effects->prePaintWindow(view, w, data);
     }
 
-    void paintWindow(const RenderTarget &renderTarget, const RenderViewport &viewport, EffectWindow *w, int mask, const Region &deviceRegion, WindowPaintData &data) override
+    bool paintWindow(const RenderTarget &renderTarget, const RenderViewport &viewport, EffectWindow *w, int mask, const Region &deviceRegion, WindowPaintData &data) override
     {
         if (keptOffMonitor(w)) {
-            return;
+            return true;
         }
-        effects->paintWindow(renderTarget, viewport, w, mask, deviceRegion, data);
+        return effects->paintWindow(renderTarget, viewport, w, mask, deviceRegion, data);
     }
 
-    void paintScreen(const RenderTarget &renderTarget, const RenderViewport &viewport, int mask, const Region &deviceRegion, LogicalOutput *screen) override
+    bool paintScreen(const RenderTarget &renderTarget, const RenderViewport &viewport, int mask, const Region &deviceRegion, LogicalOutput *screen) override
     {
-        effects->paintScreen(renderTarget, viewport, mask, deviceRegion, screen);
+        if (!effects->paintScreen(renderTarget, viewport, mask, deviceRegion, screen)) {
+            return false;
+        }
         // Over the lock screen the stream gets the lock screen, like any
         // other screen, and nothing of what it hides.
         if (!m_shares.contains(screen) || effects->isScreenLocked()) {
-            return;
+            return true;
         }
         VirtualDesktop *desktop = effects->currentDesktop(screen);
         // The stream's own view hides what KWin hides from capture: windows
@@ -130,10 +132,13 @@ public:
             data.setYScale(scale);
             data.setXTranslation(origin.x() + (w->x() - source.x()) * scale - w->x());
             data.setYTranslation(origin.y() + (w->y() - source.y()) * scale - w->y());
-            effects->drawWindow(renderTarget, viewport, w,
-                                PAINT_WINDOW_TRANSFORMED | PAINT_WINDOW_TRANSLUCENT | PAINT_WINDOW_OPAQUE,
-                                viewport.mapToDeviceCoordinatesAligned(screen->geometry()), data);
+            if (!effects->drawWindow(renderTarget, viewport, w,
+                                     PAINT_WINDOW_TRANSFORMED | PAINT_WINDOW_TRANSLUCENT | PAINT_WINDOW_OPAQUE,
+                                     viewport.mapToDeviceCoordinatesAligned(screen->geometry()), data)) {
+                return false;
+            }
         }
+        return true;
     }
 
 public Q_SLOTS:
