@@ -167,6 +167,11 @@ ACTIONS = {
     "unminimize": "w.minimized = false;",
     "keepAbove": "w.keepAbove = !w.keepAbove;",
     "fullscreen": "w.fullScreen = !w.fullScreen;",
+    # KWin's own actions work on the active window; these are its "Maximize
+    # Window", "Center Window" and "Move Window to Next Screen".
+    "maximize": "workspace.activeWindow = w; workspace.slotWindowMaximize();",
+    "center": "workspace.activeWindow = w; workspace.slotWindowCenter();",
+    "nextOutput": "workspace.activeWindow = w; workspace.slotWindowToNextScreen();",
 }
 
 
@@ -209,6 +214,23 @@ def move_active_script(position, follow):
         "    w.desktops = [d];\n"
         "    if (%s) workspace.setCurrentDesktopForScreen(d, w.output || workspace.activeScreen);\n"
         "}\n" % (int(position), "true" if follow else "false")
+    )
+
+
+# Hyprland resizes the active window by 100 px a step (Super+Alt+arrows); KWin's
+# own grow/shrink actions jump to the next window edge instead.
+RESIZE_STEP = 100
+RESIZE = {"left": (-1, 0), "right": (1, 0), "up": (0, -1), "down": (0, 1)}
+
+
+def resize_active_script(direction):
+    dx, dy = (n * RESIZE_STEP for n in RESIZE[direction])
+    return (
+        "const w = workspace.activeWindow;\n"
+        "if (w && w.resizeable && !w.fullScreen) {\n"
+        "    const g = w.frameGeometry;\n"
+        "    w.frameGeometry = { x: g.x, y: g.y, width: Math.max(g.width + %d, 100), height: Math.max(g.height + %d, 100) };\n"
+        "}\n" % (dx, dy)
     )
 
 
@@ -279,6 +301,11 @@ class Bridge(dbus.service.Object):
     @dbus.service.method(BUS_NAME, in_signature="ib", out_signature="")
     def MoveActiveWindowToDesktop(self, position, follow):
         self.run_once(move_active_script(position, follow))
+
+    @dbus.service.method(BUS_NAME, in_signature="s", out_signature="")
+    def ResizeActiveWindow(self, direction):
+        if direction in RESIZE:
+            self.run_once(resize_active_script(direction))
 
     @dbus.service.method(BUS_NAME, in_signature="si", out_signature="")
     def SetDesktopForOutput(self, output_name, position):
