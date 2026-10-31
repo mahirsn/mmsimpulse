@@ -33,7 +33,7 @@ VDM_IFACE = "org.kde.KWin.VirtualDesktopManager"
 SCRIPT_NAME = "mmsimpulse-windows"
 SCRIPT = os.environ.get(
     "MMSIMPULSE_KWIN_SCRIPT",
-    os.path.expanduser("~/.config/quickshell/mmsimpulse/scripts/kwin/mmsimpulse-windows.js"),
+    os.path.expanduser("~/.local/share/mmsimpulse/kwin/mmsimpulse-windows.js"),
 )
 DEBOUNCE_MS = 60
 

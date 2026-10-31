@@ -1,108 +1,38 @@
 #!/bin/bash
 # mmsimpulse installer.
 #
-# Sets up a Wayland session made of a KWin compositor and this shell — no
-# desktop environment, no plasmashell. Any KWin 6 works, as long as it
-# provides kwin_wayland.
+# Sets up a Wayland session made of a KWin compositor and nothing else — no
+# desktop environment, no plasmashell, no shell of its own. The shell is
+# yours to pick (README, "Shells"). Any KWin 6 works, as long as it provides
+# kwin_wayland.
 #
-# Everything it writes is under $HOME, except the login-manager session entry.
+# Everything it writes is under $HOME, except the login-manager session entry
+# and the KWin plugins.
 #
 #   ./install.sh            install / update
-#   ./install.sh --shell    only refresh the shell config (fast iteration)
-#   ./install.sh --yes      answer prompts with their default (for scripts)
 set -euo pipefail
 
 REPO="$(dirname "$(readlink -f "$0")")"
 CONFIG=mmsimpulse
-# This repository is the KWin-specific half; the widgets themselves are
-# pctrade/end4-pC. Point MMSIMPULSE_BASE at an existing copy to reuse it,
-# or let the installer fetch one.
-SHELL_SRC="${MMSIMPULSE_BASE:-$HOME/.config/quickshell/end4-pC}"
-BASE_REPO="${MMSIMPULSE_BASE_REPO:-https://github.com/pctrade/end4-pC.git}"
-ASSUME_YES=0
-SHELL_DIR="$HOME/.config/quickshell/$CONFIG"
 BIN="$HOME/.local/bin"
-SHIM="$HOME/.local/share/$CONFIG/bin"
-SHELL_CONFIG="$HOME/.config/$CONFIG"
+DATA="$HOME/.local/share/$CONFIG"
 SESSION="/usr/share/wayland-sessions/$CONFIG.desktop"
-
-for arg in "$@"; do [[ "$arg" == "--yes" ]] && ASSUME_YES=1; done
 
 command -v kwin_wayland >/dev/null || {
     echo "kwin_wayland not found. Install the kwin package." >&2
     exit 1
 }
 
-ask() {
-    # $1 question, $2 default (y/n). Non-interactive runs take the default.
-    local reply
-    if (( ASSUME_YES )) || [[ ! -t 0 ]]; then reply="$2"; else
-        read -rp "$1 [$([[ $2 == y ]] && echo 'Y/n' || echo 'y/N')] " reply
-        reply="${reply:-$2}"
-    fi
-    [[ "${reply,,}" == y* ]]
-}
-
-if [[ ! -d "$SHELL_SRC" ]]; then
-    echo "The base skin (pctrade/end4-pC) is not at $SHELL_SRC."
-    if ask "Clone it there now?" y; then
-        command -v git >/dev/null || { echo "git is needed to clone it." >&2; exit 1; }
-        git clone --depth 1 "$BASE_REPO" "$SHELL_SRC"
-    else
-        echo "Nothing to build on. Install it yourself and re-run, or set" >&2
-        echo "MMSIMPULSE_BASE to an existing copy." >&2
-        exit 1
-    fi
-fi
-
-# --- shell config ----------------------------------------------------------
-# The upstream skin is copied wholesale and the KWin-specific files are laid
-# over it, so upstream stays a clean base you can re-copy after it updates.
-echo "==> shell config -> $SHELL_DIR"
-# Assembled in a staging directory and swapped into place. A running shell
-# watches this tree and hot-reloads on any change, so copying into it directly
-# makes it reload a half-written config and fail to load.
-STAGE="$SHELL_DIR.new"
-rm -rf "$STAGE"
-mkdir -p "$STAGE"
-rsync -a --exclude '.git' "$SHELL_SRC/" "$STAGE/"
-cp "$REPO"/overlay/services/*.qml "$STAGE/services/"
-cp "$REPO"/overlay/bar/*.qml "$STAGE/modules/ii/bar/"
-cp "$REPO"/overlay/icons/*.svg "$STAGE/assets/icons/"
-cp "$REPO"/overlay/sidebarLeft/*.qml "$STAGE/modules/ii/sidebarLeft/"
-cp -r "$REPO"/overlay/overlayWidgets/. "$STAGE/modules/ii/overlay/"
-mkdir -p "$STAGE/scripts/kwin"
-cp "$REPO"/kwin-script/*.js "$STAGE/scripts/kwin/"
-python3 "$REPO/overlay/patch-shell.py" "$STAGE"
-
-rm -rf "$SHELL_DIR.old"
-[[ -d "$SHELL_DIR" ]] && mv "$SHELL_DIR" "$SHELL_DIR.old"
-mv "$STAGE" "$SHELL_DIR"
-rm -rf "$SHELL_DIR.old"
-
-# The skin defaults to ~/.config/illogical-impulse, which the Hyprland session
-# also writes to; patch-shell.py points this copy at ~/.config/mmsimpulse, so
-# seed it once from whatever is already configured.
-if [[ ! -d "$SHELL_CONFIG" && -d "$HOME/.config/illogical-impulse" ]]; then
-    echo "==> seeding $SHELL_CONFIG from ~/.config/illogical-impulse"
-    cp -a "$HOME/.config/illogical-impulse" "$SHELL_CONFIG"
-fi
-mkdir -p "$SHELL_CONFIG"
-
-[[ "${1:-}" == "--shell" ]] && { echo "Done. Reload with: pkill -f 'qs -c $CONFIG'; qs -c $CONFIG"; exit 0; }
-
 # --- bridge ----------------------------------------------------------------
 echo "==> bridge -> $BIN"
 mkdir -p "$BIN"
 install -m755 "$REPO"/bin/mmsimpulse-* "$BIN/"
-# Only useful on a KWin fork that registers its own `noctalia msg …` shortcuts
-# inside the compositor; harmless everywhere else, where nothing calls it.
-mkdir -p "$SHIM"
-install -m755 "$REPO/overlay/bin/noctalia" "$SHIM/"
-install -m755 "$REPO/overlay/bin/replay-saved" "$SHIM/"
-# How to run shells other than ours; the session reads them (start-mmsimpulse).
-mkdir -p "$HOME/.local/share/$CONFIG/profiles"
-install -m644 "$REPO"/profiles/* "$HOME/.local/share/$CONFIG/profiles/"
+# The KWin script behind the workspace pool and Meta+1..0; the bridge loads it.
+mkdir -p "$DATA/kwin"
+install -m644 "$REPO"/kwin-script/*.js "$DATA/kwin/"
+# How to run each shell; the session reads them (start-mmsimpulse).
+mkdir -p "$DATA/profiles"
+install -m644 "$REPO"/profiles/* "$DATA/profiles/"
 
 # --- session script --------------------------------------------------------
 echo "==> session script -> $BIN/start-$CONFIG"
@@ -178,30 +108,6 @@ org.freedesktop.impl.portal.Secret=kwallet
 PORTAL
 fi
 
-# The screenshot button hands over to Spectacle; with accept-on-release the
-# picture is taken when the mouse is let go, instead of waiting for an Accept
-# click after every selection. A value the user already set is left alone.
-if [[ -z "$(kreadconfig6 --file spectaclerc --group General --key useReleaseToCapture 2>/dev/null)" ]]; then
-    kwriteconfig6 --file spectaclerc --group General --key useReleaseToCapture true
-fi
-
-# Instant replay is gpu-screen-recorder's own user service; the overlay's
-# recorder widget switches it and Alt+F10 saves it. Its settings live in this
-# file, written once and then left to the user. The portal lets it record any
-# screen, the one on the NVIDIA card included, and it asks which only the
-# first time.
-GSR_ENV="$HOME/.config/gpu-screen-recorder.env"
-if [[ ! -f "$GSR_ENV" ]]; then
-    echo "==> instant replay settings -> $GSR_ENV"
-    mkdir -p "$HOME/Videos/Replays"
-    cat > "$GSR_ENV" <<GSR
-WINDOW=portal
-REPLAYDURATION=60
-OUTPUTDIR=$HOME/Videos/Replays
-ADDITIONAL_ARGS=-sc $SHIM/replay-saved -fallback-cpu-encoding yes
-GSR
-fi
-
 # --- shortcuts -------------------------------------------------------------
 # The workspace-sharing effect, if the package installed it, without waiting
 # for the next login.
@@ -209,13 +115,13 @@ busctl --user call org.kde.KWin /Effects org.kde.kwin.Effects loadEffect s \
     mmsimpulse_workspaceshare >/dev/null 2>&1 || true
 
 "$REPO/shortcuts/install-shortcuts.sh"
-# Super+1..0 for workspaces is what the shell's own workspace widgets promise.
+# Super+1..0 for workspaces, as on Hyprland.
 "$REPO/shortcuts/install-workspace-keys.sh" >/dev/null
 
 cat <<MSG
 
-Done. Log out and pick "mmsimpulse" in SDDM.
+Done. Pick a shell (README, "Shells"), for example:
+    echo dux > ~/.config/$CONFIG/shell
+then log out and pick "mmsimpulse" in SDDM.
 Any other session on this machine is untouched.
-
-Iterate without logging out:  pkill -f "qs -c $CONFIG"; qs -c $CONFIG
 MSG

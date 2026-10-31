@@ -1,7 +1,7 @@
 #!/bin/bash
 # mmsimpulse session.
 #
-# A Wayland session made of a KWin compositor and the mmsimpulse shell, and
+# A Wayland session made of a KWin compositor and the shell you pick, and
 # nothing else. There is no desktop environment here — no plasmashell, no
 # session manager, no Plasma workspace. Everything a Plasma session would
 # normally provide and the shell actually needs is started explicitly below.
@@ -15,41 +15,38 @@ set -uo pipefail
 
 CONFIG=mmsimpulse
 
-# Which shell provides the widgets. The session keeps its own identity either
-# way — the log, the Wayland socket and the bin directory are still mmsimpulse —
-# so only the shell changes. Pick one with MMSIMPULSE_SHELL, or by writing its
-# name into ~/.config/mmsimpulse/shell.
+# Which shell runs. Pick one with MMSIMPULSE_SHELL, or by writing its name
+# into ~/.config/mmsimpulse/shell.
 #
-# The name is a Quickshell configuration (quickshell/<name>/shell.qml), or a
-# profile: a file of that name in ~/.config/mmsimpulse/profiles or
-# ~/.local/share/mmsimpulse/profiles that says how to start a shell and what
-# each shortcut runs in it. The repository's profiles/ has the format.
+# The name is a profile: a file of that name in ~/.config/mmsimpulse/profiles
+# or ~/.local/share/mmsimpulse/profiles that says how to start a shell and what
+# each shortcut runs in it (the repository's profiles/ has the format), or a
+# Quickshell configuration (quickshell/<name>/shell.qml), started as
+# `qs -c <name>`.
 #
-# A session whose shell does not exist has no bar, no launcher and no way to
-# start anything, which is unrecoverable without a TTY. So a name that resolves
-# to neither falls back to ours rather than being taken at its word.
+# With no shell, or a name that resolves to neither, the session still comes
+# up: KWin, Alt+Tab, Meta+Return for a terminal. That is how to fix the name
+# without a TTY.
 SHELL_CONFIG="${MMSIMPULSE_SHELL:-}"
 [[ -n "$SHELL_CONFIG" ]] ||
     SHELL_CONFIG="$(head -n1 "$HOME/.config/$CONFIG/shell" 2>/dev/null | tr -d '[:space:]')"
-SHELL_CONFIG="${SHELL_CONFIG:-$CONFIG}"
 PROFILE=""
-if [[ "$SHELL_CONFIG" != "$CONFIG" ]]; then
-    found=""
+SHELL_CMD=""
+if [[ -n "$SHELL_CONFIG" ]]; then
     for dir in "${XDG_CONFIG_HOME:-$HOME/.config}/$CONFIG/profiles" "$HOME/.local/share/$CONFIG/profiles"; do
-        [[ -f "$dir/$SHELL_CONFIG" ]] && { PROFILE="$dir/$SHELL_CONFIG"; found=1; break; }
+        [[ -f "$dir/$SHELL_CONFIG" ]] && { PROFILE="$dir/$SHELL_CONFIG"; break; }
     done
-    for dir in "${XDG_CONFIG_HOME:-$HOME/.config}" /etc/xdg; do
-        [[ -z "$found" && -f "$dir/quickshell/$SHELL_CONFIG/shell.qml" ]] && { found=1; break; }
-    done
-    if [[ -z "$found" ]]; then
-        echo "Shell '$SHELL_CONFIG' has no profile and no shell.qml; falling back to $CONFIG" >&2
-        SHELL_CONFIG="$CONFIG"
+    if [[ -z "$PROFILE" ]]; then
+        for dir in "${XDG_CONFIG_HOME:-$HOME/.config}" /etc/xdg; do
+            [[ -f "$dir/quickshell/$SHELL_CONFIG/shell.qml" ]] && { SHELL_CMD="qs -c $SHELL_CONFIG"; break; }
+        done
+        [[ -n "$SHELL_CMD" ]] ||
+            echo "Shell '$SHELL_CONFIG' has no profile and no shell.qml; starting without a shell" >&2
     fi
 fi
 # A profile line is `key=command`.
 profile() { [[ -n "$PROFILE" ]] && sed -n "s/^$1=//p" "$PROFILE" | tail -n1; }
-SHELL_CMD="$(profile start)"
-SHELL_CMD="${SHELL_CMD:-qs -c $SHELL_CONFIG}"
+[[ -n "$PROFILE" ]] && SHELL_CMD="$(profile start)"
 
 LOG="$HOME/.local/share/$CONFIG.log"
 mkdir -p "$(dirname "$LOG")"
@@ -72,13 +69,6 @@ export KDE_SESSION_VERSION=6
 export KDE_FULL_SESSION=true
 export XDG_MENU_PREFIX=plasma-
 export PATH="$HOME/.local/share/$CONFIG/bin:$HOME/.local/bin:$PATH"
-
-# The skin's colour pipeline runs matugen and materialyoucolor out of a venv and
-# finds it through this variable, which a Hyprland session exports and nothing
-# here did. Without it switchwall.sh sources "/bin/activate", every generator
-# dies on a missing module, and picking a wallpaper quietly changes no colours
-# at all. Left alone if the login manager already set it.
-export ILLOGICAL_IMPULSE_VIRTUAL_ENV="${ILLOGICAL_IMPULSE_VIRTUAL_ENV:-$HOME/.local/state/quickshell/.venv}"
 
 # A Hyprland session exports QT_QPA_PLATFORM="wayland;xcb" and the user systemd
 # manager outlives a logout, so the value leaks in here. Quickshell's IPC client
@@ -105,7 +95,7 @@ fi
 
 # The shortcuts follow the shell. An entry install-shortcuts.sh marked as a
 # shell action runs the profile's command for it, or nothing when the profile
-# has none; a Quickshell configuration gets the IPC call ours answers.
+# has none; a Quickshell configuration without a profile gets its IPC call.
 #
 # Done before the compositor starts: its global shortcut daemon reads each
 # entry once, when it registers it, and keeps that command for the session.
@@ -120,8 +110,10 @@ for entry in "${XDG_DATA_HOME:-$HOME/.local/share}/applications/$CONFIG"-*.deskt
         cmd="$(profile "$action")"
         cmd="${cmd:+env -u QT_QPA_PLATFORM $cmd}"
         cmd="${cmd:-true}"
-    else
+    elif [[ -n "$SHELL_CMD" ]]; then
         cmd="env -u QT_QPA_PLATFORM qs -c $SHELL_CONFIG ipc call $action trigger"
+    else
+        cmd=true
     fi
     grep -qxF "Exec=$cmd" "$entry" && continue
     while IFS= read -r line; do
@@ -365,17 +357,15 @@ DISPLAY="$(mmsimpulse-xdisplay "$KWIN_PID")" && export DISPLAY
 # with WAYLAND_DISPLAY and DISPLAY set instead of crashing on launch.
 dbus-update-activation-environment --systemd --all 2>/dev/null
 
-# The shell draws a fixed row of workspaces, but a KWin that has never been
-# configured has exactly one virtual desktop, so on a fresh install every
-# workspace past the first leads nowhere and Meta+2..0 do nothing. Top the
-# count up to what the shell is drawing; KWin remembers them afterwards.
+# A KWin that has never been configured has exactly one virtual desktop, so on
+# a fresh install Meta+2..0 lead nowhere. Top the count up to the ten those
+# keys reach; KWin remembers them afterwards.
 VD=org.kde.KWin.VirtualDesktopManager
 for _ in $(seq 1 40); do
     busctl --user status org.kde.KWin >/dev/null 2>&1 && break
     sleep 0.25
 done
-want="$(jq -r '.bar.workspaces.shown // 10' "$HOME/.config/$CONFIG/config.json" 2>/dev/null)"
-[[ "$want" =~ ^[0-9]+$ ]] || want=10
+want=10
 have="$(busctl --user get-property org.kde.KWin /VirtualDesktopManager "$VD" count 2>/dev/null | awk '{print $2}')"
 while [[ "${have:-}" =~ ^[0-9]+$ ]] && (( have < want )); do
     busctl --user call org.kde.KWin /VirtualDesktopManager "$VD" createDesktop us "$have" "" \
@@ -427,8 +417,8 @@ timeout 15 systemctl --user start plasma-xdg-desktop-portal-kde.service 2>/dev/n
 # attempt without agent"), and without the networkmanagement agent nothing asks
 # for a Wi-Fi password. The media keys (its mediacontrol component) were dead
 # too. Through its unit, so it is restarted if it crashes. kded6 also claims
-# the tray's org.kde.StatusNotifierWatcher; the shell takes that back when it
-# starts (see ConflictKiller in overlay/patch-shell.py).
+# the tray's org.kde.StatusNotifierWatcher, which a shell with a tray of its
+# own has to take over.
 systemctl --user start plasma-kded6.service 2>/dev/null
 
 # Without plasmashell there is no Klipper, so whatever a program copies is
@@ -468,17 +458,17 @@ if command -v cliphist >/dev/null 2>&1 && command -v wl-paste >/dev/null 2>&1; t
     wl-paste --type image --watch cliphist store >/dev/null 2>&1 &
 fi
 
-# Our shell runs the KWin bridge itself (KwinBackend.qml) and reads the window
-# list from it. The bridge is also what loads the KWin script, and with it the
-# workspace pool across monitors and the Meta+1..0 keys, so for any other shell
-# the session runs it.
-[[ "$SHELL_CONFIG" != "$CONFIG" ]] && mmsimpulse-kwin-bridge >/dev/null 2>&1 &
+# The bridge loads the KWin script, and with it the workspace pool across
+# monitors and the Meta+1..0 keys, whichever shell runs.
+mmsimpulse-kwin-bridge >/dev/null 2>&1 &
 
 # ---------------------------------------------------------------------------
 # The shell, supervised
 # ---------------------------------------------------------------------------
 # `|| true` matters even without `set -e` here: it keeps a non-zero exit from
 # ending the loop that exists to restart the shell.
+SHELL_PID=""
+if [[ -n "$SHELL_CMD" ]]; then
 (
     # Ending the session ends the shell with it.
     child=""
@@ -502,15 +492,9 @@ fi
     done
 ) &
 SHELL_PID=$!
-
-# An animated wallpaper is a player process, not a setting, so nothing brings it
-# back on its own — not after a logout, and not after the compositor closes its
-# surface, which is what happens when an RDP connection adds an output. This
-# watches for both. Silent when no animated wallpaper was ever picked.
-mmsimpulse-wallpaper supervise >/dev/null 2>&1 &
+fi
 
 # The compositor exiting is what ends the session.
 wait "$KWIN_PID"
-kill "$SHELL_PID" 2>/dev/null
-pkill -f "qs -c $SHELL_CONFIG" 2>/dev/null
+[[ -n "$SHELL_PID" ]] && kill "$SHELL_PID" 2>/dev/null
 trap - EXIT
