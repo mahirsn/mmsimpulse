@@ -2,8 +2,10 @@
 // wlroots compositors, niri and Hyprland expect, and KWin does not: the window
 // list (wlr-foreign-toplevel-management) and workspaces (ext-workspace). With
 // them a Quickshell shell, waybar and the like show windows and workspaces on
-// KWin without knowing anything about it.
+// KWin without knowing anything about it. It also keeps KWin's window
+// animations off such a shell's panels.
 
+#include "animations.h"
 #include "toplevels.h"
 #include "workspaces.h"
 
@@ -17,12 +19,14 @@ public:
     MmsimpulsePlugin()
         : m_toplevels(std::make_unique<ForeignToplevels>())
         , m_workspaces(std::make_unique<ExtWorkspaces>())
+        , m_animations(std::make_unique<LayerAnimations>())
     {
     }
 
 private:
     std::unique_ptr<ForeignToplevels> m_toplevels;
     std::unique_ptr<ExtWorkspaces> m_workspaces;
+    std::unique_ptr<LayerAnimations> m_animations;
 };
 
 class MmsimpulsePluginFactory : public PluginFactory
