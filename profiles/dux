@@ -4,6 +4,12 @@
 # A profile is `key=command` lines. `start` starts the shell; every other key is
 # a shortcut from shortcuts/shortcuts.tsv and the command it runs. A shortcut
 # not listed does nothing in this shell.
+#
+# A profile can also bring keys of its own, and they are given back when the
+# profile is no longer used:
+#   bind Meta+E=dolphin                  a new shortcut
+#   kwin Window Maximize=Meta+F          a KWin action on another key
+#   powerdevil=off                       the shell dims, locks and sleeps itself
 start=dms run
 searchToggle=dms ipc call spotlight toggle
 sidebarLeftToggle=dms ipc call dash toggle ""
