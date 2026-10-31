@@ -130,6 +130,146 @@ for entry in "${XDG_DATA_HOME:-$HOME/.local/share}/applications/$CONFIG"-*.deskt
     done <"$entry" >"$entry.new" && mv "$entry.new" "$entry"
     shortcuts_changed=1
 done
+# A profile can also bring keys of its own, so a shell keeps the keys it has on
+# another compositor:
+#
+#   bind <keys>=<command>    a new global shortcut that runs the command
+#   kwin <action>=<keys>     a KWin action, by its name in kglobalshortcutsrc
+#
+# Whatever else holds such a key gives it up for the session. What was changed
+# is recorded and put back at the next login before the profile (or another
+# one) is applied again, so changing or dropping the profile leaves the keys
+# as they were.
+python3 - "${XDG_CONFIG_HOME:-$HOME/.config}/kglobalshortcutsrc" \
+    "${XDG_DATA_HOME:-$HOME/.local/share}/applications" \
+    "${XDG_STATE_HOME:-$HOME/.local/state}/$CONFIG/shortcuts.json" \
+    "$PROFILE" "$CONFIG" <<'PY' && shortcuts_changed=1
+import glob, json, os, re, sys
+
+rc, appdir, state, profile, config = sys.argv[1:]
+lines = open(rc).read().split("\n") if os.path.exists(rc) else []
+saved = json.load(open(state)) if os.path.exists(state) else {}
+old_entries = glob.glob(os.path.join(appdir, config + "-bind-*.desktop"))
+
+binds, actions = [], []
+for line in (open(profile).read().splitlines() if profile else []):
+    if line.startswith("bind ") and "=" in line:
+        keys, cmd = line[5:].split("=", 1)
+        binds.append((keys.strip(), cmd.strip()))
+    elif line.startswith("kwin ") and "=" in line:
+        action, keys = line[5:].split("=", 1)
+        actions.append((action.strip(), keys.strip()))
+if not saved and not old_entries and not binds and not actions:
+    sys.exit(1)
+
+def find(group, key):
+    """(index of the group header, index of the key's line or None)."""
+    head, at = None, None
+    for i, line in enumerate(lines):
+        if line.startswith("["):
+            if head is not None:
+                break
+            if line == "[%s]" % group:
+                head = i
+        elif head is not None and line.split("=", 1)[0] == key:
+            at = i
+    return head, at
+
+def get(group, key):
+    _, at = find(group, key)
+    return None if at is None else lines[at].split("=", 1)[1]
+
+def put(group, key, value):
+    head, at = find(group, key)
+    if value is None:
+        if at is not None:
+            del lines[at]
+        return
+    if at is not None:
+        lines[at] = "%s=%s" % (key, value)
+    elif head is not None:
+        lines.insert(head + 1, "%s=%s" % (key, value))
+    else:
+        lines.extend(["", "[%s]" % group, "%s=%s" % (key, value)])
+
+def change(group, key, value):
+    saved.setdefault("%s\x1f%s" % (group, key), get(group, key))
+    put(group, key, value)
+
+# A value is "active,default,friendly name"; [services] entries have only the
+# active part, read as one string. Keys inside a part are split by a literal
+# \t; a comma in a key is escaped, except in that one string.
+split = lambda v: re.split(r"(?<!\\),", v)
+keys_of = lambda part: [k.replace("\\,", ",") for k in part.split("\\t") if k and k != "none"]
+join = lambda keys, esc=True: "\\t".join(k.replace(",", "\\,") if esc else k for k in keys) or "none"
+
+# Put back what the last login changed.
+for gk, value in saved.items():
+    put(*gk.split("\x1f"), value)
+saved = {}
+for path in old_entries:
+    os.remove(path)
+lines = [l for i, l in enumerate(lines)
+         if not (l.startswith("[services][%s-bind-" % config) and
+                 (i + 1 >= len(lines) or lines[i + 1].startswith("[") or not lines[i + 1]))]
+
+claimed = {k for keys, _ in binds for k in keys_of(keys)} | \
+          {k for _, keys in actions for k in keys_of(keys)}
+group = None
+for i, line in enumerate(list(lines)):
+    if line.startswith("["):
+        group = line[1:-1]
+        continue
+    if "=" not in line or line.startswith("_k_friendly_name"):
+        continue
+    key, value = line.split("=", 1)
+    parts = [value] if group.startswith("services]") else split(value)
+    held = keys_of(parts[0])
+    if claimed & set(held):
+        parts[0] = join([k for k in held if k not in claimed], not group.startswith("services]"))
+        change(group, key, ",".join(parts))
+
+# An application entry bound to its own default key has no line in the file
+# (the daemon drops it), and takes that key again when it registers. Such an
+# entry gets an explicit binding without the claimed key.
+dirs = [appdir] + [os.path.join(d, "applications") for d in
+                   os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share").split(":")]
+seen = set()
+for d in dirs:
+    for path in sorted(glob.glob(os.path.join(d, "*.desktop"))):
+        name = os.path.basename(path)
+        if name in seen:
+            continue
+        seen.add(name)
+        try:
+            text = open(path, errors="replace").read()
+        except OSError:
+            continue
+        m = re.search(r"^X-KDE-Shortcuts=(.*)$", text, re.M)
+        if not m or name.startswith(config + "-bind-") or get("services][" + name, "_launch") is not None:
+            continue
+        held = [k.strip() for k in m.group(1).split(",") if k.strip()]
+        if claimed & set(held):
+            change("services][" + name, "_launch", join([k for k in held if k not in claimed], False))
+
+for action, keys in actions:
+    parts = split(get("kwin", action) or ",none,%s" % action)
+    parts[0] = join(keys_of(keys))
+    change("kwin", action, ",".join(parts))
+
+for n, (keys, cmd) in enumerate(binds, 1):
+    name = "%s-bind-%d.desktop" % (config, n)
+    with open(os.path.join(appdir, name), "w") as f:
+        f.write("[Desktop Entry]\nType=Application\nName=%s: %s\nExec=%s\n"
+                "NoDisplay=true\nTerminal=false\nX-KDE-GlobalAccel-CommandShortcut=true\n"
+                "X-KDE-Shortcuts=%s\n" % (config, cmd, cmd,
+                                          ",".join(k.replace(",", "\\,") for k in keys_of(keys))))
+    change("services][" + name, "_launch", join(keys_of(keys), False))
+
+os.makedirs(os.path.dirname(state), exist_ok=True)
+json.dump(saved, open(state, "w"))
+open(rc, "w").write("\n".join(lines))
+PY
 [[ -n "${shortcuts_changed:-}" ]] && command -v kbuildsycoca6 >/dev/null \
     && kbuildsycoca6 --noincremental >/dev/null 2>&1
 
@@ -254,6 +394,33 @@ if ! busctl --user status org.kde.kglobalaccel >/dev/null 2>&1; then
     [[ -n "$KGA" ]] && nohup "$KGA" >>"$LOG" 2>&1 &
 fi
 
+# Portals are D-Bus activated: asking for org.freedesktop.impl.portal.desktop.kde
+# starts plasma-xdg-desktop-portal-kde.service on demand. Starting the binary by
+# hand takes the bus name away from its unit, and then nothing restarts it when
+# it exits — which looks exactly like the KDE backend refusing to autostart.
+#
+# First a clean slate now that the environment above is published, so the
+# portals start with WAYLAND_DISPLAY and XDG_CURRENT_DESKTOP of this session
+# instead of a previous one's. Done before kded6 and the shell start, which
+# are the first to ask for a portal.
+systemctl --user stop xdg-desktop-portal.service xdg-desktop-portal-gtk.service \
+    xdg-desktop-portal-hyprland.service xdg-desktop-portal-wlr.service \
+    plasma-xdg-desktop-portal-kde.service 2>/dev/null
+# Matched by path: the comm name is truncated to 15 characters, so `pkill -x`
+# never matches these and the stale process keeps the bus name — which is what
+# stops the unit from starting.
+pkill -f '/xdg-desktop-portal-hyprland$' 2>/dev/null
+pkill -f '/xdg-desktop-portal-wlr$' 2>/dev/null
+pkill -f '/xdg-desktop-portal-kde$' 2>/dev/null
+# Then the KDE backend is started through its unit. The services of the
+# session that just ended restart with its stale environment while this one
+# comes up, and an activation of the backend asked for then can be left
+# pending in the bus for good: no start job, no error, and every portal call
+# afterwards waits 25 seconds for nothing, so each GTK, Qt or Electron app
+# takes that long to open. The bus settles a pending activation as soon as
+# the name gets an owner, which starting the unit gives it.
+timeout 15 systemctl --user start plasma-xdg-desktop-portal-kde.service 2>/dev/null
+
 # Plasma starts kded6 itself; here nothing did. Its modules are what answer
 # BlueZ and NetworkManager when they need the user: without the bluedevil agent
 # a new Bluetooth device drops the moment it tries to pair ("Authentication
@@ -280,30 +447,15 @@ if command -v xembedsniproxy >/dev/null && ! pgrep -x xembedsniproxy >/dev/null;
     nohup xembedsniproxy >>"$LOG" 2>&1 &
 fi
 
-# Portals are D-Bus activated: asking for org.freedesktop.impl.portal.desktop.kde
-# starts plasma-xdg-desktop-portal-kde.service on demand. Starting one by hand
-# takes the bus name away from its unit, and then nothing restarts it when it
-# exits — which looks exactly like the KDE backend refusing to autostart.
-#
-# So there is nothing to launch here. All that is needed is a clean slate now
-# that the environment above is published, so the next activation inherits
-# WAYLAND_DISPLAY and XDG_CURRENT_DESKTOP instead of a previous session's.
-systemctl --user stop xdg-desktop-portal.service xdg-desktop-portal-gtk.service \
-    xdg-desktop-portal-hyprland.service xdg-desktop-portal-wlr.service \
-    plasma-xdg-desktop-portal-kde.service 2>/dev/null
-# Matched by path: the comm name is truncated to 15 characters, so `pkill -x`
-# never matches these and the stale process keeps the bus name — which is what
-# stops the unit from starting.
-pkill -f '/xdg-desktop-portal-hyprland$' 2>/dev/null
-pkill -f '/xdg-desktop-portal-wlr$' 2>/dev/null
-pkill -f '/xdg-desktop-portal-kde$' 2>/dev/null
 
 # Power management: idle timeouts, DPMS, suspend, brightness. Optional — the
-# session is usable without it, it just never dims or sleeps.
+# session is usable without it, it just never dims or sleeps. A shell that
+# does all of this itself says `powerdevil=off` in its profile: two of them
+# would each dim, lock and suspend on their own timers.
 UPOWERD="$(find_bin upowerd)"
 [[ -n "$UPOWERD" ]] && nohup "$UPOWERD" >>"$LOG" 2>&1 &
 POWERDEVIL="$(find_bin org_kde_powerdevil)"
-[[ -n "$POWERDEVIL" ]] && nohup "$POWERDEVIL" >>"$LOG" 2>&1 &
+[[ -n "$POWERDEVIL" && "$(profile powerdevil)" != off ]] && nohup "$POWERDEVIL" >>"$LOG" 2>&1 &
 
 # cliphist only ever contains what a watcher hands it, and in a session with no
 # desktop environment nothing else starts one: clipboard history stayed empty
