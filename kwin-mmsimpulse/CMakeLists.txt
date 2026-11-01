@@ -25,7 +25,9 @@ set(PROTOCOLS
     ${WLR_PROTOCOLS}/unstable/wlr-foreign-toplevel-management-unstable-v1.xml
     ${WLR_PROTOCOLS}/unstable/wlr-screencopy-unstable-v1.xml
     ${WAYLAND_PROTOCOLS}/staging/ext-image-capture-source/ext-image-capture-source-v1.xml
-    ${WAYLAND_PROTOCOLS}/staging/ext-image-copy-capture/ext-image-copy-capture-v1.xml)
+    ${WAYLAND_PROTOCOLS}/staging/ext-image-copy-capture/ext-image-copy-capture-v1.xml
+    # wlroots' own; no distribution package installs it.
+    ${CMAKE_CURRENT_SOURCE_DIR}/protocols/virtual-keyboard-unstable-v1.xml)
 set(PROTOCOL_SOURCES)
 foreach(xml ${PROTOCOLS})
     get_filename_component(name ${xml} NAME_WE)
@@ -38,7 +40,8 @@ foreach(xml ${PROTOCOLS})
 endforeach()
 
 kcoreaddons_add_plugin(kwin-mmsimpulse
-    SOURCES main.cpp animations.cpp capture.cpp imagecopy.cpp toplevels.cpp toplevellist.cpp screencopy.cpp workspaces.cpp ${PROTOCOL_SOURCES}
+    SOURCES main.cpp animations.cpp capture.cpp imagecopy.cpp virtualkeyboard.cpp toplevels.cpp toplevellist.cpp screencopy.cpp workspaces.cpp ${PROTOCOL_SOURCES}
     INSTALL_NAMESPACE "kwin/plugins")
 target_include_directories(kwin-mmsimpulse PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
-target_link_libraries(kwin-mmsimpulse KWin::kwin)
+pkg_check_modules(XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
+target_link_libraries(kwin-mmsimpulse KWin::kwin PkgConfig::XKBCOMMON)
