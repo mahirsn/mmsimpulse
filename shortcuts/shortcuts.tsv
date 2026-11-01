@@ -1,44 +1,11 @@
-# mmsimpulse shell shortcuts.  name <TAB> default keys <TAB> description <TAB> command
+# mmsimpulse base shortcuts.  name <TAB> keys <TAB> description <TAB> command
 #
-# Only actions that work as a single press are here.  kglobalaccel launches a
-# command and has no release event, so the shell's press/release pairs
-# (searchToggleRelease, workspaceNumber, the *Open/*Close variants, osdVolume*)
-# have no KDE equivalent and are left unbound.  Leave the key column empty to
-# install an action without a default binding.
-#
-# A fourth column makes the entry run that command instead of an IPC call into
-# the shell, and such an entry is bound to its key on install rather than being
-# left for you to assign.  That is for keys nothing else in this session
-# answers: without plasmashell the volume keys belong to a component that never
-# starts, so they do nothing at all until something claims them.
-searchToggle	Meta+Space	Toggle search
-overviewWorkspacesToggle	Meta+E	Toggle overview
-overlayToggle	Meta+Slash	Toggle overlay
-sidebarLeftToggle	Meta+J	Toggle left sidebar
-sidebarRightToggle	Meta+N	Toggle right sidebar
-sidebarLeftToggleDetach	Meta+Shift+J	Detach left sidebar
-barToggle	Meta+B	Toggle bar
-sessionToggle	Meta+X	Toggle session screen
-settingsToggle	Meta+I	Toggle settings
-mediaControlsToggle	Meta+M	Toggle media controls
-oskToggle	Meta+K	Toggle on-screen keyboard
-lock	Meta+Ctrl+L	Lock screen
-wallpaperSelectorToggle	Meta+Comma	Toggle wallpaper selector
-wallpaperSelectorRandom	Meta+Shift+Comma	Random wallpaper
-centeredWallpaperToggle	Meta+Shift+B	Toggle centered wallpaper
-regionScreenshot	Meta+Shift+S	Screenshot region
-regionRecord	Meta+Alt+R	Record region
-regionRecordWithSound	Meta+Alt+Shift+R	Record region with sound
-regionOcr	Meta+Shift+T	OCR region
-regionSearch	Meta+Shift+F	Search region
-screenTranslate	Meta+Shift+G	Translate screen
-overviewClipboardToggle	Meta+Shift+V	Clipboard history
-overviewEmojiToggle	Meta+Period	Emoji picker
-overviewSymbolsToggle	Meta+Shift+M	Material symbols picker
-
-# Keys with nobody home in a session without plasmashell.
-terminal	Meta+Return	Terminal	kitty -1
+# Only keys that nothing else in this session answers. A shell's own keys live
+# in its profile (`bind <keys>=<command>`, see profiles/dux). Without
+# plasmashell the volume keys belong to a component that never starts, so they
+# do nothing at all until something claims them. Each one is bound on install,
+# unless something else already holds the key.
+terminal	Meta+Return	Terminal	sh -c 'command -v xdg-terminal-exec >/dev/null && exec xdg-terminal-exec || exec kitty -1'
 volumeUp	Volume Up	Volume up	wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+
 volumeDown	Volume Down	Volume down	wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
 volumeMute	Volume Mute	Mute	wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
-

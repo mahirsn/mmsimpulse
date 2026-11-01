@@ -1,21 +1,17 @@
 # Dux Shell (formerly DankMaterialShell): https://github.com/duxlabs-dev/dux-shell
 # Use it with: echo dux > ~/.config/mmsimpulse/shell
 #
-# A profile is `key=command` lines. `start` starts the shell; every other key is
-# a shortcut from shortcuts/shortcuts.tsv and the command it runs. A shortcut
-# not listed does nothing in this shell.
-#
-# A profile can also bring keys of its own, and they are given back when the
-# profile is no longer used:
-#   bind Meta+E=dolphin                  a new shortcut
-#   kwin Window Maximize=Meta+F          a KWin action on another key
+# A profile is how the session starts a shell and which keys it gives it:
+#   start=<command>                      starts the shell
+#   bind <keys>=<command>                a global shortcut; several keys are split by \t
+#   kwin <action>=<keys>                 a KWin action on other keys ("none" frees them)
 #   powerdevil=off                       the shell dims, locks and sleeps itself
+# Whatever else holds a key gives it up while the profile is in use, and gets
+# it back when the profile is no longer used.
 start=dms run
-searchToggle=dms ipc call spotlight toggle
-sidebarLeftToggle=dms ipc call dash toggle ""
-sidebarRightToggle=dms ipc call control-center toggle
-sessionToggle=dms ipc call powermenu toggle
-settingsToggle=dms ipc call settings toggle
-overviewClipboardToggle=dms ipc call clipboard toggle
-# The shell's own lock needs ext-session-lock-v1, which KWin does not have.
-lock=loginctl lock-session
+bind Meta+Space=dms ipc call spotlight toggle
+bind Meta+J=dms ipc call dash toggle ""
+bind Meta+N=dms ipc call control-center toggle
+bind Meta+X=dms ipc call powermenu toggle
+bind Meta+I=dms ipc call settings toggle
+bind Meta+Shift+V=dms ipc call clipboard toggle

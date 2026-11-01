@@ -4,12 +4,10 @@
 # Noctalia has a KWin backend of its own, so its workspaces and window list
 # need nothing from here. The format is described in profiles/dux.
 start=noctalia
-searchToggle=noctalia msg panel-toggle launcher
-sidebarRightToggle=noctalia msg panel-toggle control-center
-sessionToggle=noctalia msg panel-toggle session
-settingsToggle=noctalia msg settings-toggle
-barToggle=noctalia msg bar-toggle
-overviewClipboardToggle=noctalia msg panel-toggle clipboard
-wallpaperSelectorToggle=noctalia msg panel-toggle wallpaper
-# Noctalia's own lock needs ext-session-lock-v1, which KWin does not have.
-lock=loginctl lock-session
+bind Meta+Space=noctalia msg panel-toggle launcher
+bind Meta+N=noctalia msg panel-toggle control-center
+bind Meta+X=noctalia msg panel-toggle session
+bind Meta+I=noctalia msg settings-toggle
+bind Meta+B=noctalia msg bar-toggle
+bind Meta+Shift+V=noctalia msg panel-toggle clipboard
+bind Meta+,=noctalia msg panel-toggle wallpaper

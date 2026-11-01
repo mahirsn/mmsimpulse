@@ -93,37 +93,9 @@ if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
     exec dbus-run-session -- "$0" "$@"
 fi
 
-# The shortcuts follow the shell. An entry install-shortcuts.sh marked as a
-# shell action runs the profile's command for it, or nothing when the profile
-# has none; a Quickshell configuration without a profile gets its IPC call.
-#
-# Done before the compositor starts: its global shortcut daemon reads each
-# entry once, when it registers it, and keeps that command for the session.
-# The service cache is rebuilt for the same reason when an entry changed.
-#
-# `env -u QT_QPA_PLATFORM` as in install-shortcuts.sh: a Quickshell IPC client
-# that inherits a QT_QPA_PLATFORM cannot reach the shell.
-for entry in "${XDG_DATA_HOME:-$HOME/.local/share}/applications/$CONFIG"-*.desktop; do
-    action="$(sed -n 's/^X-Mmsimpulse-Action=//p' "$entry" 2>/dev/null)"
-    [[ -n "$action" ]] || continue
-    if [[ -n "$PROFILE" ]]; then
-        cmd="$(profile "$action")"
-        cmd="${cmd:+env -u QT_QPA_PLATFORM $cmd}"
-        cmd="${cmd:-true}"
-    elif [[ -n "$SHELL_CMD" ]]; then
-        cmd="env -u QT_QPA_PLATFORM qs -c $SHELL_CONFIG ipc call $action trigger"
-    else
-        cmd=true
-    fi
-    grep -qxF "Exec=$cmd" "$entry" && continue
-    while IFS= read -r line; do
-        [[ "$line" == Exec=* ]] && line="Exec=$cmd"
-        printf '%s\n' "$line"
-    done <"$entry" >"$entry.new" && mv "$entry.new" "$entry"
-    shortcuts_changed=1
-done
-# A profile can also bring keys of its own, so a shell keeps the keys it has on
-# another compositor:
+# A shell's keys come from its profile, so it keeps the keys it has on another
+# compositor. The keys are bound before the compositor starts: its global
+# shortcut daemon reads each entry once, when it registers it.
 #
 #   bind <keys>=<command>    a new global shortcut that runs the command
 #   kwin <action>=<keys>     a KWin action, by its name in kglobalshortcutsrc
@@ -195,9 +167,14 @@ split = lambda v: re.split(r"(?<!\\),", v)
 keys_of = lambda part: [k.replace("\\,", ",") for k in part.split("\\t") if k and k != "none"]
 join = lambda keys, esc=True: "\\t".join(k.replace(",", "\\,") if esc else k for k in keys) or "none"
 
-# Put back what the last login changed.
+# Put back what the last login changed. An entry that is gone since (an older
+# release's shell actions) has nothing to give the key back to.
 for gk, value in saved.items():
-    put(*gk.split("\x1f"), value)
+    group, key = gk.split("\x1f")
+    gone = re.match(r"services\]\[(%s-.*\.desktop)$" % re.escape(config), group)
+    if gone and not os.path.exists(os.path.join(appdir, gone.group(1))):
+        continue
+    put(group, key, value)
 saved = {}
 for path in old_entries:
     os.remove(path)

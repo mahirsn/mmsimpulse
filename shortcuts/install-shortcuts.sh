@@ -1,21 +1,15 @@
 #!/bin/bash
-# Install mmsimpulse's shell shortcuts into KDE's global shortcut system.
+# Install mmsimpulse's base shortcuts (shortcuts.tsv) into KDE's global
+# shortcut system.
 #
 # kglobalacceld's KServiceActionComponent launches a .desktop entry when its
-# shortcut fires.  So each shell action becomes a
-# hidden .desktop that runs `qs -c mmsimpulse ipc call <name> trigger`, and the
-# default key lives in X-KDE-Shortcuts.  kglobalacceld only notices entries
+# shortcut fires.  So each entry becomes a hidden .desktop that runs its
+# command, and the key lives in X-KDE-Shortcuts.  kglobalacceld only notices entries
 # that ksycoca indexes, hence the kbuildsycoca6 run at the end.
 #
-# Nothing here edits ~/.config/kglobalshortcutsrc.  That file is shared with
-# another session on this machine and rewriting it would change bindings
-# there; the shortcuts show up in System Settings > Shortcuts anyway, and
-# rebinding one from there is what writes to it.
-#
-# Caveat worth knowing: ~/.local/share/applications is not per session, so
-# these entries are visible to the daily session too and hold the same keys
-# there.  In that session the command is a no-op (no mmsimpulse instance to
-# talk to).  `--uninstall` removes them again.
+# ~/.local/share/applications is not per session, so these entries are visible
+# to another session on this machine too and hold the same keys there; a key
+# something there already holds is left alone.  `--uninstall` removes them.
 set -euo pipefail
 
 CONFIG=mmsimpulse
@@ -37,6 +31,23 @@ if [[ "${1:-}" == "--uninstall" ]]; then
 fi
 
 mkdir -p "$APPDIR"
+
+# Entries an earlier release installed and shortcuts.tsv no longer has (the
+# shell actions, which profiles now bind themselves) would keep their keys.
+# The profile entries (-bind-) and the workspace keys are not ours to judge.
+for entry in "$APPDIR"/$CONFIG-*.desktop; do
+    [[ -e "$entry" ]] || continue
+    name="$(basename "$entry" .desktop)"
+    name="${name#$CONFIG-}"
+    [[ "$name" == bind-* || "$name" == workspace* ]] && continue
+    cut -f1 "$TSV" | grep -qxF "$name" && continue
+    rm -f "$entry"
+    for key in _launch _k_friendly_name; do
+        kwriteconfig6 --file kglobalshortcutsrc --group services \
+            --group "$CONFIG-$name.desktop" --key "$key" --delete 2>/dev/null || true
+    done
+done
+
 conflicts=()
 written=()
 
@@ -59,10 +70,9 @@ while IFS= read -r line; do
     keys=$(cut -f2 <<< "$line")
     desc=$(cut -f3 <<< "$line")
     cmd=$(cut -f4 <<< "$line")
-    [[ "$cmd" == "$line" ]] && cmd=""
 
-    # Only worth mentioning as a heads-up now: the key is offered as the KCM's
-    # default, not bound, so nothing is actually stolen.
+    # Only worth mentioning as a heads-up: an entry yields a key something
+    # else already holds, so nothing is actually stolen.
     if [[ -n "$keys" && -f "$SHORTCUTSRC" ]] && grep -qF "=$keys," "$SHORTCUTSRC"; then
         conflicts+=("$keys ($name)")
     fi
@@ -79,49 +89,37 @@ while IFS= read -r line; do
 
     # X-KDE-Shortcuts is what makes kglobalacceld notice the entry at all, so
     # it has to carry a key. The binding written below is what decides whether
-    # that key is actually live, and it is not.
-    #
-    # X-Mmsimpulse-Action marks a shell action: the session points its Exec at
-    # whichever shell it runs (start-mmsimpulse, "The shortcuts follow").
-    action=""
-    [[ -z "$cmd" ]] && action="X-Mmsimpulse-Action=$name"
+    # that key is actually live.
     cat > "$APPDIR/$CONFIG-$name.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
 Name=mmsimpulse: $desc
-Exec=${cmd:-env -u QT_QPA_PLATFORM qs -c $CONFIG ipc call $name trigger}
+Exec=$cmd
 NoDisplay=true
 Terminal=false
 X-KDE-GlobalAccel-CommandShortcut=true
 X-KDE-Shortcuts=$keys
-$action
 DESKTOP
 
-    # Register the action unbound: the third field is the friendly name, the
-    # second the default the Shortcuts KCM offers, the first the live key.
-    # Anything already in the file is a binding the user chose, so leave it.
-    #
-    # The launcher is the one exception. A session with no way to open the
-    # launcher has no way to start anything, so it gets Meta+Space — but only
-    # if nothing else holds that key.
+    # Register the action: the third field is the friendly name, the second
+    # the default the Shortcuts KCM offers, the first the live key. Anything
+    # already in the file is a binding the user chose, so leave it.
     $installed && continue
     entry="$CONFIG-$name.desktop"
     current="$(kreadconfig6 --file kglobalshortcutsrc --group services --group "$entry" \
         --key _launch 2>/dev/null)"
     # The live binding is the first comma-separated field. kglobalacceld writes
     # an unbound action as an empty field, not as "none", so both count as
-    # "nothing here yet" — otherwise re-running would never bind the launcher.
+    # "nothing here yet" — otherwise re-running would never bind the key.
     bound="${current%%,*}"
     if [[ -n "$current" && -n "$bound" && "$bound" != none ]]; then
         continue
     fi
-    # An entry with a command of its own is for a key nothing else in this
-    # session answers, so it is bound rather than offered — an unbound volume
-    # key is just a dead key. The launcher is bound for the same reason: a
-    # session with no way to open it has no way to start anything. Both still
-    # yield to a key something already holds.
+    # Each entry is for a key nothing else in this session answers, so it is
+    # bound rather than offered — an unbound volume key is just a dead key.
+    # It still yields to a key something already holds.
     live=none
-    if [[ -n "$cmd" || "$name" == searchToggle ]] && ! key_taken "$keys"; then
+    if ! key_taken "$keys"; then
         live="$keys"
     fi
     kwriteconfig6 --file kglobalshortcutsrc --group services --group "$entry" \
@@ -169,10 +167,9 @@ if busctl --user status org.kde.kglobalaccel >/dev/null 2>&1; then
 fi
 echo "Installed $(ls "$APPDIR"/$CONFIG-*.desktop | wc -l) shortcut entries in $APPDIR"
 
-echo "Bound: the launcher, a terminal, and the volume keys. Assign the rest in"
-echo "System Settings > Shortcuts, search for \"mmsimpulse\"."
+echo "Bound: a terminal and the volume keys. The shell's own keys come from its profile."
 
 if (( ${#conflicts[@]} )); then
-    printf '\nThese suggested defaults are already taken elsewhere, so pick something\nelse for them:\n'
+    printf '\nThese keys are already taken elsewhere, so pick something else for them\nin System Settings > Shortcuts:\n'
     printf '  %s\n' "${conflicts[@]}"
 fi
