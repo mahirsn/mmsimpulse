@@ -23,7 +23,9 @@ set(PROTOCOLS
     ${WAYLAND_PROTOCOLS}/staging/ext-workspace/ext-workspace-v1.xml
     ${WAYLAND_PROTOCOLS}/staging/ext-foreign-toplevel-list/ext-foreign-toplevel-list-v1.xml
     ${WLR_PROTOCOLS}/unstable/wlr-foreign-toplevel-management-unstable-v1.xml
-    ${WLR_PROTOCOLS}/unstable/wlr-screencopy-unstable-v1.xml)
+    ${WLR_PROTOCOLS}/unstable/wlr-screencopy-unstable-v1.xml
+    ${WAYLAND_PROTOCOLS}/staging/ext-image-capture-source/ext-image-capture-source-v1.xml
+    ${WAYLAND_PROTOCOLS}/staging/ext-image-copy-capture/ext-image-copy-capture-v1.xml)
 set(PROTOCOL_SOURCES)
 foreach(xml ${PROTOCOLS})
     get_filename_component(name ${xml} NAME_WE)
@@ -36,7 +38,7 @@ foreach(xml ${PROTOCOLS})
 endforeach()
 
 kcoreaddons_add_plugin(kwin-mmsimpulse
-    SOURCES main.cpp animations.cpp toplevels.cpp toplevellist.cpp screencopy.cpp workspaces.cpp ${PROTOCOL_SOURCES}
+    SOURCES main.cpp animations.cpp capture.cpp imagecopy.cpp toplevels.cpp toplevellist.cpp screencopy.cpp workspaces.cpp ${PROTOCOL_SOURCES}
     INSTALL_NAMESPACE "kwin/plugins")
 target_include_directories(kwin-mmsimpulse PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(kwin-mmsimpulse KWin::kwin)
