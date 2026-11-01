@@ -16,6 +16,7 @@ depends=('kwin' 'kglobalacceld' 'xdg-desktop-portal-kde'
          'wl-clipboard' 'wl-clip-persist')
 optdepends=(
   'quickshell: Quickshell-based shells such as Dux'
+  'lua: the keys from a Hyprland Lua config'
   'powerdevil: idle timeouts, DPMS, suspend and brightness'
   'upower: battery status'
   'kdeplasma-addons: task switcher layouts, without which Alt+Tab draws nothing'

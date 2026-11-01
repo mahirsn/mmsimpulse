@@ -1,0 +1,365 @@
+#!/usr/bin/env python3
+"""Read a shell's keys out of the user's Hyprland or niri config.
+
+Shells ship their keys as compositor config: digit and Dux write Hyprland and
+niri binds on install, and the rest document them that way. So the session
+takes the keys from there instead of asking for a profile per shell. What runs
+a command becomes a global shortcut; what has a KWin counterpart (close, kill,
+fullscreen, pin, focus, move, resize) becomes that KWin action; the rest
+(workspaces, groups, tiling layouts, mouse binds) has no meaning here and is
+left out. Workspace keys are mmsimpulse's own.
+
+Prints profile lines (`bind <keys>=<command>`, `kwin <action>=<keys>`), which
+the session reads before the profile's own, so a profile still has the last
+word.
+
+Usage: mmsimpulse-binds [auto|hyprland|niri]
+"""
+
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+
+HOME = os.path.expanduser("~")
+CONFIG = os.environ.get("XDG_CONFIG_HOME") or os.path.join(HOME, ".config")
+
+# ---------------------------------------------------------------------------
+# Keys
+# ---------------------------------------------------------------------------
+
+MODS = {"super": "Meta", "win": "Meta", "logo": "Meta", "mod4": "Meta", "mod": "Meta", "meta": "Meta",
+        "ctrl": "Ctrl", "control": "Ctrl", "alt": "Alt", "mod1": "Alt", "shift": "Shift"}
+MOD_ORDER = ["Meta", "Ctrl", "Alt", "Shift"]
+KEYS = {"return": "Return", "enter": "Return", "space": "Space", "tab": "Tab", "escape": "Esc",
+        "esc": "Esc", "backspace": "Backspace", "delete": "Del", "insert": "Ins", "home": "Home",
+        "end": "End", "page_up": "PgUp", "prior": "PgUp", "page_down": "PgDown", "next": "PgDown",
+        "left": "Left", "right": "Right", "up": "Up", "down": "Down", "comma": ",", "period": ".",
+        "slash": "/", "minus": "-", "grave": "`", "semicolon": ";", "apostrophe": "'",
+        "bracketleft": "[", "bracketright": "]", "backslash": "\\", "print": "Print",
+        "xf86audioraisevolume": "Volume Up", "xf86audiolowervolume": "Volume Down",
+        "xf86audiomute": "Volume Mute", "xf86audiomicmute": "Microphone Mute",
+        "xf86monbrightnessup": "Monitor Brightness Up", "xf86monbrightnessdown": "Monitor Brightness Down",
+        "xf86audioplay": "Media Play", "xf86audiopause": "Media Pause", "xf86audionext": "Media Next",
+        "xf86audioprev": "Media Previous", "xf86audiostop": "Media Stop"}
+
+
+def kde_keys(mods, key):
+    """KDE's spelling of a key with modifiers, or None when it has no single key.
+
+    The modifiers come in the order KDE writes them, because a key is matched
+    against kglobalshortcutsrc as text.
+    """
+    out = set()
+    for m in mods:
+        m = m.strip().lower()
+        if not m:
+            continue
+        if m not in MODS:
+            return None
+        out.add(MODS[m])
+    k = key.strip()
+    low = k.lower()
+    if low in KEYS:
+        k = KEYS[low]
+    elif re.fullmatch(r"f([1-9]|1[0-9]|2[0-4])", low):
+        k = low.upper()
+    elif re.fullmatch(r"[a-z0-9]", low):
+        k = low.upper()
+    else:
+        return None  # modifier-only binds, mouse buttons, key codes, "=" and the like
+    return "+".join([m for m in MOD_ORDER if m in out] + [k])
+
+
+def split_combo(text, sep):
+    """'SUPER + SHIFT + page_up' -> (mods, key)."""
+    parts = [p.strip() for p in text.split(sep) if p.strip()]
+    return (parts[:-1], parts[-1]) if parts else ([], "")
+
+
+# ---------------------------------------------------------------------------
+# Actions
+# ---------------------------------------------------------------------------
+
+BRIDGE = "busctl --user call org.mmsimpulse.KWin /Windows org.mmsimpulse.KWin ResizeActiveWindow s "
+DIRS = {"l": "Left", "left": "Left", "r": "Right", "right": "Right", "u": "Up", "up": "Up",
+        "d": "Down", "down": "Down"}
+
+
+def command(cmd):
+    """A command to bind, or None. hyprctl talks to a Hyprland that is not running."""
+    cmd = cmd.strip()
+    if not cmd or "hyprctl" in cmd:
+        return None
+    cmd = re.sub(r"(^|(?<=\s))~/", HOME + "/", cmd)
+    # The compositors run it through a shell; a global shortcut runs it as is.
+    if re.search(r"[|;&<>$`*?()\n]", cmd):
+        cmd = "sh -c " + shlex.quote(cmd)
+    return cmd
+
+
+def action(kind, args):
+    """('bind', command) or ('kwin', KWin action name) for a dispatcher, or None."""
+    args = args or {}
+    if kind == "exec":
+        cmd = command(args.get("cmd", ""))
+        return ("bind", cmd) if cmd else None
+    if kind == "close":
+        return ("kwin", "Window Close")
+    if kind == "kill":
+        return ("kwin", "Kill Window")
+    if kind == "fullscreen":
+        mode = str(args.get("mode", 0))
+        return ("kwin", "Window Maximize" if mode in ("1", "maximized") else "Window Fullscreen")
+    if kind == "maximize":
+        return ("kwin", "Window Maximize")
+    if kind == "pin":
+        return ("kwin", "Window On All Desktops")
+    d = DIRS.get(str(args.get("direction", "")).lower())
+    if kind == "focus" and d and "workspace" not in args:
+        return ("kwin", "Switch Window " + d)
+    if kind == "move" and d and not args.get("group_aware") and "workspace" not in args:
+        return ("kwin", "Window Quick Tile " + {"Up": "Top", "Down": "Bottom"}.get(d, d))
+    if kind == "resize" and args.get("relative"):
+        x, y = float(args.get("x", 0) or 0), float(args.get("y", 0) or 0)
+        side = "left" if x < 0 else "right" if x > 0 else "up" if y < 0 else "down" if y > 0 else None
+        return ("bind", BRIDGE + side) if side else None
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Hyprland, Lua config
+# ---------------------------------------------------------------------------
+
+# The Lua config is a program, so it is run, with an `hl` that records what it
+# asks for instead of doing it. A bind given a function runs that function
+# once, and the binding is whatever it does (an exec or a dispatch). The
+# active workspace reads as a dwindle one, Hyprland's default layout, which is
+# the closest to floating windows on KWin.
+LUA = r"""
+local out = {}
+local function enc(v)
+  local t = type(v)
+  if t == "string" then return string.format("%q", v):gsub("\\\n", "\\n") end
+  if t == "number" or t == "boolean" then return tostring(v) end
+  if t == "table" then
+    local parts = {}
+    for k, x in pairs(v) do
+      if type(k) == "string" and type(x) ~= "table" and type(x) ~= "function" then
+        parts[#parts + 1] = string.format("%q", k) .. ":" .. enc(x)
+      end
+    end
+    return "{" .. table.concat(parts, ",") .. "}"
+  end
+  return "null"
+end
+local function act(kind, args) return { __act = kind, args = args } end
+local calls
+local stub
+stub = setmetatable({}, { __index = function() return stub end, __call = function() return nil end })
+local function node(path)
+  return setmetatable({}, {
+    __index = function(_, k) return node(path .. "." .. k) end,
+    __call = function(_, ...) local a = { ... }; return act(path, a[1]) end,
+  })
+end
+hl = setmetatable({
+  dsp = setmetatable({ exec_cmd = function(c) return act("exec", { cmd = c }) end },
+    { __index = function(_, k) return node(k) end }),
+  exec_cmd = function(c) if calls then calls[#calls + 1] = act("exec", { cmd = c }) end end,
+  -- A submap is how Hyprland finishes a key sequence; on its own it binds nothing.
+  dispatch = function(a)
+    if calls and type(a) == "table" and a.__act ~= "submap" then calls[#calls + 1] = a end
+  end,
+  get_active_workspace = function() return { tiled_layout = "dwindle", id = 1 } end,
+  get_active_special_workspace = function() return nil end,
+  get_windows = function() return {} end,
+  get_current_submap = function() return "" end,
+  bind = function(key, a, opts)
+    if type(opts) == "table" and opts.mouse then return end
+    if type(a) == "function" then
+      calls = {}
+      pcall(a)
+      local got = calls
+      calls = nil
+      if #got ~= 1 then return end
+      a = got[1]
+    end
+    if type(a) == "table" and a.__act then
+      out[#out + 1] = "B\t" .. key .. "\t" .. a.__act .. "\t" .. enc(type(a.args) == "table" and a.args or { arg = a.args })
+    end
+  end,
+}, { __index = function() return stub end })
+package.path = arg[1] .. "/?.lua;" .. package.path
+local ok, err = pcall(dofile, arg[1] .. "/hyprland.lua")
+if not ok then io.stderr:write(tostring(err), "\n") end
+io.write(table.concat(out, "\n"), "\n")
+"""
+
+LUA_KINDS = {"exec": "exec", "window.close": "close", "window.kill": "kill",
+             "window.fullscreen": "fullscreen", "window.pin": "pin", "focus": "focus",
+             "window.move": "move", "window.resize": "resize"}
+
+
+def hyprland_lua(directory):
+    lua = next((p for p in ("lua5.4", "lua", "luajit") if shutil_which(p)), None)
+    if not lua:
+        print("mmsimpulse-binds: no lua to read hyprland.lua with", file=sys.stderr)
+        return []
+    try:
+        res = subprocess.run([lua, "-", directory], input=LUA, capture_output=True, text=True,
+                             timeout=10, cwd=directory)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(f"mmsimpulse-binds: {exc}", file=sys.stderr)
+        return []
+    out = []
+    for line in res.stdout.splitlines():
+        parts = line.split("\t", 3)
+        if len(parts) != 4 or parts[0] != "B":
+            continue
+        _, key, kind, raw = parts
+        try:
+            args = json.loads(raw)
+        except ValueError:
+            args = {}
+        out.append((split_combo(key, "+"), LUA_KINDS.get(kind, ""), args))
+    return out
+
+
+def shutil_which(name):
+    return any(os.access(os.path.join(d, name), os.X_OK) for d in os.environ.get("PATH", "").split(":") if d)
+
+
+# ---------------------------------------------------------------------------
+# Hyprland, classic config
+# ---------------------------------------------------------------------------
+
+def hyprland_conf(path, seen=None, variables=None):
+    seen = seen if seen is not None else set()
+    variables = variables if variables is not None else {}
+    path = os.path.realpath(os.path.expanduser(path))
+    if path in seen or not os.path.isfile(path):
+        return []
+    seen.add(path)
+    out = []
+    for raw in open(path, errors="replace").read().splitlines():
+        line = raw.split("#", 1)[0].strip() if not raw.lstrip().startswith("bind") else re.sub(r"\s#.*$", "", raw).strip()
+        if "=" not in line:
+            continue
+        name, value = (s.strip() for s in line.split("=", 1))
+        for var in sorted(variables, key=len, reverse=True):
+            value = value.replace(var, variables[var])
+        if name.startswith("$"):
+            variables[name] = value
+        elif name == "source":
+            import glob
+            for p in sorted(glob.glob(os.path.expanduser(value))):
+                out += hyprland_conf(p, seen, variables)
+        elif re.fullmatch(r"bind[a-z]*", name) and "m" not in name[4:]:
+            fields = [f.strip() for f in value.split(",", 3)]
+            if len(fields) < 3:
+                continue
+            mods, key, disp = fields[0], fields[1], fields[2].lower()
+            arg = fields[3] if len(fields) > 3 else ""
+            mods = mods.replace("+", " ").replace("_", " ").split()
+            kind, args = {
+                "exec": ("exec", {"cmd": arg}),
+                "killactive": ("close", {}),
+                "forcekillactive": ("kill", {}),
+                "fullscreen": ("fullscreen", {"mode": arg or 0}),
+                "pin": ("pin", {}),
+                "movefocus": ("focus", {"direction": arg}),
+                "movewindow": ("move", {"direction": arg}),
+            }.get(disp, ("", {}))
+            out.append(((mods, key), kind, args))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# niri
+# ---------------------------------------------------------------------------
+
+NIRI = {"close-window": ("close", {}), "fullscreen-window": ("fullscreen", {}),
+        "maximize-column": ("maximize", {}), "focus-column-left": ("focus", {"direction": "left"}),
+        "focus-column-right": ("focus", {"direction": "right"}),
+        "focus-window-up": ("focus", {"direction": "up"}), "focus-window-down": ("focus", {"direction": "down"})}
+
+
+def niri(path):
+    if not os.path.isfile(path):
+        return []
+    text = open(path, errors="replace").read()
+    out = []
+    for inc in re.findall(r'^\s*include\s+(?:optional=true\s+)?"([^"]+)"', text, re.M):
+        out += niri(os.path.join(os.path.dirname(path), os.path.expanduser(inc)))
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    text = re.sub(r"//[^\n]*", "", text)
+    for block in re.finditer(r"\bbinds\s*\{", text):
+        depth, i = 1, block.end()
+        while i < len(text) and depth:
+            depth += {"{": 1, "}": -1}.get(text[i], 0)
+            i += 1
+        body = text[block.end():i - 1]
+        for m in re.finditer(r"([A-Za-z0-9_+]+)((?:\s+[a-z-]+=(?:\"[^\"]*\"|\S+))*)\s*\{([^{}]*)\}", body):
+            combo, body_ = m.group(1), m.group(3).strip().rstrip(";").strip()
+            words = shlex.split(body_) if body_ else []
+            if not words:
+                continue
+            if words[0] == "spawn":
+                kind, args = "exec", {"cmd": shlex.join(words[1:])}
+            elif words[0] == "spawn-sh":
+                kind, args = "exec", {"cmd": " ".join(words[1:])}
+            else:
+                kind, args = NIRI.get(words[0], ("", {}))
+            out.append((split_combo(combo, "+"), kind, args))
+    return out
+
+
+# ---------------------------------------------------------------------------
+
+def read(source):
+    hypr = os.path.join(CONFIG, "hypr")
+    if source in ("auto", "hyprland"):
+        if os.path.isfile(os.path.join(hypr, "hyprland.lua")):
+            return hyprland_lua(hypr)
+        if os.path.isfile(os.path.join(hypr, "hyprland.conf")):
+            return hyprland_conf(os.path.join(hypr, "hyprland.conf"))
+        if source == "hyprland":
+            return []
+    if source in ("auto", "niri"):
+        return niri(os.path.join(CONFIG, "niri", "config.kdl"))
+    return []
+
+
+def lines(entries):
+    """Profile lines. A key bound twice keeps its last binding, as in the compositors."""
+    binds, kwin = {}, {}
+    for (mods, key), kind, args in entries:
+        keys = kde_keys(mods, key)
+        a = action(kind, args) if keys else None
+        if not a:
+            continue
+        for d in (binds, kwin):
+            d.pop(keys, None)
+        (binds if a[0] == "bind" else kwin)[keys] = a[1]
+    out = ["bind %s=%s" % (k, c) for k, c in binds.items()]
+    by_action = {}
+    for k, name in kwin.items():
+        by_action.setdefault(name, []).append(k)
+    out += ["kwin %s=%s" % (name, "\\t".join(ks)) for name, ks in by_action.items()]
+    return out
+
+
+def main():
+    source = (sys.argv[1] if len(sys.argv) > 1 else "") or "auto"
+    if source == "none":
+        return 0
+    for line in lines(read(source)):
+        print(line)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -6,6 +6,9 @@
 #   bind <keys>=<command>                a global shortcut; several keys are split by \t
 #   kwin <action>=<keys>                 a KWin action on other keys ("none" frees them)
 #   powerdevil=off                       the shell dims, locks and sleeps itself
+#   binds=hyprland|niri|none             where the keys from your compositor config come from
+#                                        (default: Hyprland if you have its config, else niri)
+# The keys in your Hyprland or niri config come first; these come after them.
 # Whatever else holds a key gives it up while the profile is in use, and gets
 # it back when the profile is no longer used.
 start=dms run

@@ -19,10 +19,10 @@ CONFIG=mmsimpulse
 # into ~/.config/mmsimpulse/shell.
 #
 # The name is a profile: a file of that name in ~/.config/mmsimpulse/profiles
-# or ~/.local/share/mmsimpulse/profiles that says how to start a shell and what
-# each shortcut runs in it (the repository's profiles/ has the format), or a
-# Quickshell configuration (quickshell/<name>/shell.qml), started as
-# `qs -c <name>`.
+# or ~/.local/share/mmsimpulse/profiles that says how to start a shell and
+# which keys it gets (the repository's profiles/ has the format); a Quickshell
+# configuration (quickshell/<name>/shell.qml), started as `qs -c <name>`; or
+# else a command of that name.
 #
 # With no shell, or a name that resolves to neither, the session still comes
 # up: KWin, Alt+Tab, Meta+Return for a terminal. That is how to fix the name
@@ -40,8 +40,12 @@ if [[ -n "$SHELL_CONFIG" ]]; then
         for dir in "${XDG_CONFIG_HOME:-$HOME/.config}" /etc/xdg; do
             [[ -f "$dir/quickshell/$SHELL_CONFIG/shell.qml" ]] && { SHELL_CMD="qs -c $SHELL_CONFIG"; break; }
         done
+        # Otherwise a command of that name, as shells are usually started. The
+        # login manager's PATH lacks ~/.local/bin, which the session adds below.
+        [[ -n "$SHELL_CMD" ]] || ! PATH="$HOME/.local/bin:$PATH" command -v "$SHELL_CONFIG" >/dev/null ||
+            SHELL_CMD="$SHELL_CONFIG"
         [[ -n "$SHELL_CMD" ]] ||
-            echo "Shell '$SHELL_CONFIG' has no profile and no shell.qml; starting without a shell" >&2
+            echo "Shell '$SHELL_CONFIG' has no profile, no shell.qml and no command; starting without a shell" >&2
     fi
 fi
 # A profile line is `key=command`.
@@ -104,6 +108,11 @@ fi
 # is recorded and put back at the next login before the profile (or another
 # one) is applied again, so changing or dropping the profile leaves the keys
 # as they were.
+# The shell's keys are the ones its user already has in a Hyprland or niri
+# config (mmsimpulse-binds); `binds=hyprland|niri|none` in the profile picks.
+MMSIMPULSE_IMPORTED=""
+[[ -n "$SHELL_CMD" ]] && MMSIMPULSE_IMPORTED="$(mmsimpulse-binds "$(profile binds)" 2>>"$LOG")"
+export MMSIMPULSE_IMPORTED
 python3 - "${XDG_CONFIG_HOME:-$HOME/.config}/kglobalshortcutsrc" \
     "${XDG_DATA_HOME:-$HOME/.local/share}/applications" \
     "${XDG_STATE_HOME:-$HOME/.local/state}/$CONFIG/shortcuts.json" \
@@ -115,14 +124,31 @@ lines = open(rc).read().split("\n") if os.path.exists(rc) else []
 saved = json.load(open(state)) if os.path.exists(state) else {}
 old_entries = glob.glob(os.path.join(appdir, config + "-bind-*.desktop"))
 
-binds, actions = [], []
-for line in (open(profile).read().splitlines() if profile else []):
+# The keys read from the user's Hyprland or niri config come first, the
+# profile's after them; a key bound twice keeps the later binding. A KWin action
+# from the config gets its keys added to the ones it has; a profile's sets them.
+imported = os.environ.get("MMSIMPULSE_IMPORTED", "").splitlines()
+entries = [(l, True) for l in imported] + \
+          [(l, False) for l in (open(profile).read().splitlines() if profile else [])]
+bound, acts = {}, {}
+for line, add in entries:
     if line.startswith("bind ") and "=" in line:
-        keys, cmd = line[5:].split("=", 1)
-        binds.append((keys.strip(), cmd.strip()))
+        keys, cmd = (x.strip() for x in line[5:].split("=", 1))
+        for name, (ks, a) in list(acts.items()):
+            left = [k for k in ks if k != keys]
+            if a and not left:
+                del acts[name]
+            else:
+                acts[name] = (left, a)
+        bound[keys] = cmd
     elif line.startswith("kwin ") and "=" in line:
-        action, keys = line[5:].split("=", 1)
-        actions.append((action.strip(), keys.strip()))
+        action, keys = (x.strip() for x in line[5:].split("=", 1))
+        ks = [k for k in keys.split("\\t") if k]
+        for k in ks:
+            bound.pop(k, None)
+        acts[action] = (ks, add)
+binds = list(bound.items())
+actions = [(a, "\\t".join(ks) or "none", add) for a, (ks, add) in acts.items()]
 if not saved and not old_entries and not binds and not actions:
     sys.exit(1)
 
@@ -183,7 +209,7 @@ lines = [l for i, l in enumerate(lines)
                  (i + 1 >= len(lines) or lines[i + 1].startswith("[") or not lines[i + 1]))]
 
 claimed = {k for keys, _ in binds for k in keys_of(keys)} | \
-          {k for _, keys in actions for k in keys_of(keys)}
+          {k for _, keys, _ in actions for k in keys_of(keys)}
 group = None
 for i, line in enumerate(list(lines)):
     if line.startswith("["):
@@ -221,9 +247,10 @@ for d in dirs:
         if claimed & set(held):
             change("services][" + name, "_launch", join([k for k in held if k not in claimed], False))
 
-for action, keys in actions:
+for action, keys, add in actions:
     parts = split(get("kwin", action) or ",none,%s" % action)
-    parts[0] = join(keys_of(keys))
+    parts[0] = join(([k for k in keys_of(parts[0]) if k not in claimed] if add else []) +
+                    [k for k in keys_of(keys) if not add or k not in keys_of(parts[0])])
     change("kwin", action, ",".join(parts))
 
 for n, (keys, cmd) in enumerate(binds, 1):
