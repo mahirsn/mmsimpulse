@@ -1,12 +1,13 @@
 // mmsimpulse: KWin plugin that speaks the Wayland protocols shells written for
 // wlroots compositors, niri and Hyprland expect, and KWin does not: the window
 // list (wlr-foreign-toplevel-management, ext-foreign-toplevel-list) and
-// workspaces (ext-workspace). With
+// workspaces (ext-workspace), and screenshots (wlr-screencopy). With
 // them a Quickshell shell, waybar and the like show windows and workspaces on
 // KWin without knowing anything about it. It also keeps KWin's window
 // animations off such a shell's panels.
 
 #include "animations.h"
+#include "screencopy.h"
 #include "toplevellist.h"
 #include "toplevels.h"
 #include "workspaces.h"
@@ -21,6 +22,7 @@ public:
     MmsimpulsePlugin()
         : m_toplevels(std::make_unique<ForeignToplevels>())
         , m_toplevelList(std::make_unique<ToplevelList>())
+        , m_screenCopy(std::make_unique<ScreenCopy>())
         , m_workspaces(std::make_unique<ExtWorkspaces>())
         , m_animations(std::make_unique<LayerAnimations>())
     {
@@ -29,6 +31,7 @@ public:
 private:
     std::unique_ptr<ForeignToplevels> m_toplevels;
     std::unique_ptr<ToplevelList> m_toplevelList;
+    std::unique_ptr<ScreenCopy> m_screenCopy;
     std::unique_ptr<ExtWorkspaces> m_workspaces;
     std::unique_ptr<LayerAnimations> m_animations;
 };
