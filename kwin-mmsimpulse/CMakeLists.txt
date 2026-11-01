@@ -21,6 +21,7 @@ pkg_get_variable(WLR_PROTOCOLS wlr-protocols pkgdatadir)
 # The protocols KWin does not speak and other shells expect.
 set(PROTOCOLS
     ${WAYLAND_PROTOCOLS}/staging/ext-workspace/ext-workspace-v1.xml
+    ${WAYLAND_PROTOCOLS}/staging/ext-foreign-toplevel-list/ext-foreign-toplevel-list-v1.xml
     ${WLR_PROTOCOLS}/unstable/wlr-foreign-toplevel-management-unstable-v1.xml)
 set(PROTOCOL_SOURCES)
 foreach(xml ${PROTOCOLS})
@@ -34,7 +35,7 @@ foreach(xml ${PROTOCOLS})
 endforeach()
 
 kcoreaddons_add_plugin(kwin-mmsimpulse
-    SOURCES main.cpp animations.cpp toplevels.cpp workspaces.cpp ${PROTOCOL_SOURCES}
+    SOURCES main.cpp animations.cpp toplevels.cpp toplevellist.cpp workspaces.cpp ${PROTOCOL_SOURCES}
     INSTALL_NAMESPACE "kwin/plugins")
 target_include_directories(kwin-mmsimpulse PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(kwin-mmsimpulse KWin::kwin)
