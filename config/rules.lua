@@ -3,9 +3,14 @@
 -- there are left alone). Where a window goes, its size, workspace and state
 -- apply when it opens; opacity, focus and borders apply always.
 --
--- match (regular expressions):
+-- match (regular expressions, case sensitive):
 --   class, initial_class    the app id (Wayland) or window class (X11)
 --   title, initial_title    the window title
+-- An app's class can differ from Hyprland's: an Electron app without
+-- ELECTRON_OZONE_PLATFORM_HINT=auto (env.lua) runs on X11 here, and Proton
+-- Pass is then "Proton Pass", not "proton-pass". To see a window's class, run
+--   qdbus6 org.kde.KWin /KWin org.kde.KWin.queryWindowInfo
+-- and click the window: resourceClass is what class matches.
 -- KWin rules cannot match on a window's state (float, fullscreen, xwayland,
 -- tags); a rule that does is left out and named in the log.
 --
@@ -22,5 +27,5 @@
 --   no_screen_share = true     hidden from screenshots and screen sharing
 --
 -- mms.window_rule({ name = "pictures", match = { class = "^(imv|org.kde.gwenview)$" }, center = true, size = "1200 800" })
--- mms.window_rule({ name = "passwords", match = { class = "^(proton-pass|org.keepassxc.KeePassXC)$" }, no_screen_share = true })
+-- mms.window_rule({ name = "passwords", match = { class = "^(proton-pass|Proton Pass|org.keepassxc.KeePassXC)$" }, no_screen_share = true })
 -- mms.window_rule({ name = "music", match = { class = "^spotify$" }, workspace = "9" })
