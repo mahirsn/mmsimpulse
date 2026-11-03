@@ -1,0 +1,14 @@
+-- Monitors, as Hyprland's hl.monitor. Saved, applied at once through KWin
+-- (kscreen-doctor), which also remembers them. Remove the "-- " to use one.
+--
+--   output     the connector, as `kscreen-doctor -o` names it: eDP-1, HDMI-A-1, DP-2 ...
+--   mode       "2560x1600@165", "1920x1080" (highest rate), "preferred",
+--              "highres", "highrr", or "disable"
+--   position   "0x0", "-1920x0": where it sits, in scaled pixels; negative
+--              values are fine, the whole layout is moved to start at 0x0
+--   scale      1, 1.25, 1.5, 2 ...
+--   transform  0 normal, 1 rotated 90°, 2 180°, 3 270° (KWin has no flipped ones)
+--   disabled   true to turn it off
+--
+-- mms.monitor({ output = "eDP-1", mode = "2560x1600@165", position = "0x0", scale = 1.5 })
+-- mms.monitor({ output = "HDMI-A-1", mode = "1920x1080@60", position = "-1920x0", scale = 1 })

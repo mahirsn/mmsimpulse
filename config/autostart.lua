@@ -1,0 +1,11 @@
+-- Programs started once with the session, after the shell. Takes effect at
+-- the next login. The shell itself is not started here: ~/.config/mmsimpulse/shell
+-- or mms.shell picks it.
+--
+-- mms.exec_once("kdeconnectd")
+-- mms.exec_once("nm-applet")
+--
+-- Hyprland's way works too:
+-- hl.on("hyprland.start", function()
+--   hl.exec_cmd("kdeconnectd")
+-- end)

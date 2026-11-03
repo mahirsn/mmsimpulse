@@ -109,19 +109,28 @@ PORTAL
 fi
 
 # --- config ----------------------------------------------------------------
-# The user's own file, written once and never again. A Hyprland or niri
-# config found here is offered at its end, commented out.
-MMS_LUA="${XDG_CONFIG_HOME:-$HOME/.config}/$CONFIG/$CONFIG.lua"
-if [[ ! -f "$MMS_LUA" ]]; then
-    echo "==> config -> $MMS_LUA"
-    mkdir -p "$(dirname "$MMS_LUA")"
+# The user's own files, each written once and never again. A Hyprland or
+# niri config found here is offered at the end of mmsimpulse.lua, commented out.
+CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/$CONFIG"
+mkdir -p "$CONF_DIR"
+for f in "$REPO"/config/*.lua; do
+    dest="$CONF_DIR/$(basename "$f")"
+    [[ -e "$dest" ]] && continue
+    echo "==> config -> $dest"
     {
-        cat "$REPO/config/$CONFIG.lua"
-        for f in hypr/hyprland.lua hypr/hyprland.conf niri/config.kdl; do
-            [[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/$f" ]] && echo "-- mms.source(\"~/.config/$f\")"
-        done
-    } > "$MMS_LUA"
-fi
+        cat "$f"
+        if [[ "$(basename "$f")" == "$CONFIG.lua" ]]; then
+            for c in hypr/keybinds.lua hypr/hyprland.lua hypr/hyprland.conf niri/config.kdl; do
+                [[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/$c" ]] || continue
+                if [[ "$c" == hypr/hyprland.lua ]]; then
+                    echo "-- mms.source(\"~/.config/$c\", { \"binds\", \"input\", \"monitors\" })"
+                else
+                    echo "-- mms.source(\"~/.config/$c\")"
+                fi
+            done
+        fi
+    } > "$dest"
+done
 
 # --- shortcuts -------------------------------------------------------------
 # The workspace-sharing effect, if the package installed it, without waiting

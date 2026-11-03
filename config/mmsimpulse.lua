@@ -1,51 +1,38 @@
 -- mmsimpulse config: ~/.config/mmsimpulse/mmsimpulse.lua
 --
--- Written once by mmsimpulse-install and yours from then on. Saving it binds
--- the keys again at once; a mistake shows a notification and leaves the keys
--- as they were. It is Lua, as Hyprland's hyprland.lua: hl.bind and
--- hl.dsp.* work here too, and require("name") loads
--- ~/.config/mmsimpulse/name.lua.
+-- The files in ~/.config/mmsimpulse are written once by mmsimpulse-install
+-- and are yours from then on: each one explains what it can hold. It is Lua,
+-- as Hyprland's hyprland.lua is, and split the same way: this file only
+-- loads the others. Saving any of them applies it at once (each file says
+-- what waits for the next login); a mistake shows a notification and leaves
+-- everything as it was. The log is ~/.local/share/mmsimpulse.log.
 --
---   mms.bind(keys, action)          keys as in Hyprland: "SUPER + SHIFT + 1"
---   mms.exec(command)               run a command
---   mms.kwin(action)                a KWin action, by its name in
---                                   System Settings > Shortcuts > KWin
---   mms.workspace(n)                show workspace n (or "prev", "next") on
---                                   the monitor under the mouse
---   mms.movetoworkspace(n)          send the window there and follow it
---   mms.movetoworkspacesilent(n)    send the window there (or "prev", "next")
---   mms.shell(name)                 the shell to start, as in
---                                   ~/.config/mmsimpulse/shell
---   mms.source(path)                take in the keys of a Hyprland
---                                   (.lua or .conf) or niri (.kdl) config
+-- hl.* works too, so a Hyprland Lua file can be copied in as it is.
+
+require("keybinds")   -- keys
+require("input")      -- keyboard layout, key repeat, mouse and touchpad
+require("monitors")   -- resolution, refresh rate, position, scale, rotation
+require("autostart")  -- programs to start with the session
+require("env")        -- environment variables
+
+-- mms.shell("dux")   -- the shell to start, instead of ~/.config/mmsimpulse/shell
+
+-- Another compositor's config
 --
--- A key bound here wins over the shell's profile and takes the key from
--- whatever else held it. A KWin action bound here gets exactly the keys
--- given here.
-
-local mod = "SUPER"
-
--- Workspaces 1..10 on keys 1..0.
-for i = 1, 10 do
-  local key = tostring(i % 10)
-  mms.bind(mod .. " + " .. key, mms.workspace(i))
-  mms.bind(mod .. " + ALT + " .. key, mms.movetoworkspacesilent(i))
-  mms.bind(mod .. " + SHIFT + " .. key, mms.movetoworkspace(i))
-end
-mms.bind(mod .. " + CTRL + Left", mms.workspace("prev"))
-mms.bind(mod .. " + CTRL + Right", mms.workspace("next"))
-mms.bind(mod .. " + SHIFT + Left", mms.movetoworkspacesilent("prev"))
-mms.bind(mod .. " + SHIFT + Right", mms.movetoworkspacesilent("next"))
-
--- Examples:
--- mms.bind(mod .. " + Return", mms.exec("kitty"))
--- mms.bind(mod .. " + Q", mms.kwin("Window Close"))
--- mms.bind(mod .. " + F", mms.kwin("Window Maximize"))
--- require("keybinds")
-
--- Keys from another compositor's config. mms.source runs a Hyprland Lua
--- config (or reads a hyprland.conf / niri config.kdl) and binds what it can
--- here: commands become global shortcuts; close, kill, fullscreen, pin,
--- focus, move and resize become the matching KWin actions. Workspace binds,
--- layouts and mouse binds are left out. A KWin action bound only there keeps
--- its other keys. Remove the "-- " in front to use one.
+-- mms.source(path) runs a Hyprland Lua file, or reads a hyprland.conf or a
+-- niri config.kdl, and takes in what has a KWin counterpart. Two ways:
+--
+--   mms.source("~/.config/hypr/keybinds.lua")
+--       one file, with everything in it.
+--
+--   mms.source("~/.config/hypr/hyprland.lua", { "binds", "input", "monitors" })
+--       a whole config, but only the parts named: binds, input, monitors,
+--       autostart, env. Without the list, a whole config also starts its
+--       autostart programs (Hyprland's bar, wallpaper and the like) here.
+--
+-- What comes from there: commands become global shortcuts; close, kill,
+-- fullscreen, pin, focus, move and resize become the matching KWin actions;
+-- input and monitor settings as in input.lua and monitors.lua. Workspace
+-- binds, layouts, decorations and mouse binds are left out (the log names
+-- each setting with no KWin counterpart). A KWin action bound only there
+-- keeps its other keys. Remove the "-- " in front to use one.

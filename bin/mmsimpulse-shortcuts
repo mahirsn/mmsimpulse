@@ -246,8 +246,13 @@ NAMES = {"Esc": 0x01000000, "Tab": 0x01000001, "Backtab": 0x01000002, "Backspace
          "Media Previous": 0x01000082, "Media Next": 0x01000083, "Media Pause": 0x01000085,
          "Toggle Media Play/Pause": 0x01000086, "Monitor Brightness Up": 0x010000b2,
          "Monitor Brightness Down": 0x010000b3, "Microphone Mute": 0x01000113,
-         "Launch (C)": 0x010000ae}
+         "Keyboard Light On/Off": 0x010000b4, "Keyboard Brightness Up": 0x010000b5,
+         "Keyboard Brightness Down": 0x010000b6, "Power Off": 0x010000b7, "Screensaver": 0x010000ba,
+         "Media Rewind": 0x010000c5, "Tools": 0x010000f1, "Battery": 0x010000fe,
+         "Media Fast Forward": 0x01000102, "Hibernate": 0x01000108, "Power Down": 0x0100010b,
+         "Microphone Volume Up": 0x0100011d, "Microphone Volume Down": 0x0100011e, "Sleep": 0x01020004}
 NAMES.update({"F%d" % n: 0x01000030 + n - 1 for n in range(1, 36)})
+NAMES.update({"Launch (%s)" % c: 0x010000a2 + i for i, c in enumerate("0123456789ABCDEF")})
 
 
 def code(key):
@@ -330,6 +335,212 @@ def push(before, after, config, log):
         bind(gk)
 
 
+# ---------------------------------------------------------------------------
+# Settings: input and monitors, written into KWin's own configuration
+# ---------------------------------------------------------------------------
+
+# input.<key> of a config file: (file, group, key, value as the file has it).
+FOCUS = lambda v: "FocusFollowsMouse" if str(v) == "1" else "ClickToFocus"
+FILE_KEYS = {
+    "kb_layout": ("kxkbrc", "Layout", "LayoutList", str),
+    "kb_variant": ("kxkbrc", "Layout", "VariantList", str),
+    "kb_model": ("kxkbrc", "Layout", "Model", str),
+    "kb_options": ("kxkbrc", "Layout", "Options", str),
+    "repeat_rate": ("kcminputrc", "Keyboard", "RepeatRate", str),
+    "repeat_delay": ("kcminputrc", "Keyboard", "RepeatDelay", str),
+    "follow_mouse": ("kwinrc", "Windows", "FocusPolicy", FOCUS),
+}
+# input.<key> of each pointing device, through KWin's InputDevice objects:
+# (property, D-Bus type, value, property that says the device has it,
+#  property with the device's own default).
+DEVICE_KEYS = {
+    "sensitivity": [("pointerAcceleration", "d", float, "supportsPointerAcceleration", "defaultPointerAcceleration")],
+    "accel_profile": [("pointerAccelerationProfileFlat", "b", lambda v: v == "flat",
+                       "supportsPointerAccelerationProfileFlat", "defaultPointerAccelerationProfileFlat"),
+                      ("pointerAccelerationProfileAdaptive", "b", lambda v: v != "flat",
+                       "supportsPointerAccelerationProfileAdaptive", "defaultPointerAccelerationProfileAdaptive")],
+    "natural_scroll": [("naturalScroll", "b", bool, "supportsNaturalScroll", "naturalScrollEnabledByDefault")],
+    "left_handed": [("leftHanded", "b", bool, "supportsLeftHanded", "leftHandedEnabledByDefault")],
+    "scroll_factor": [("scrollFactor", "d", float, None, None)],
+    "tap-to-click": [("tapToClick", "b", bool, "tapFingerCount", "tapToClickEnabledByDefault")],
+    "disable_while_typing": [("disableWhileTyping", "b", bool, "supportsDisableWhileTyping",
+                              "disableWhileTypingEnabledByDefault")],
+}
+
+
+def kconfig(file, group, key, value):
+    """Write (None: delete) a KDE config value, telling KWin, which reloads it."""
+    cmd = ["kwriteconfig6", "--notify", "--file", file, "--group", group, "--key", key]
+    subprocess.run(cmd + (["--delete"] if value is None else [value]), capture_output=True)
+
+
+def kread(file, group, key):
+    res = subprocess.run(["kreadconfig6", "--file", file, "--group", group, "--key", key],
+                         capture_output=True, text=True)
+    return res.stdout.rstrip("\n") if res.stdout.strip() else None
+
+
+def apply_settings(lines, state, log):
+    """Apply `set input.*` and `monitor` lines; what was dropped goes back."""
+    sets = {}
+    for line in lines:
+        if line.startswith("set ") and "=" in line:
+            key, value = line[4:].split("=", 1)
+            try:
+                sets[key] = json.loads(value)
+            except ValueError:
+                pass
+    path = os.path.join(os.path.dirname(state), "settings.json")
+    old = json.load(open(path)) if os.path.exists(path) else {"files": {}, "devices": []}
+
+    # Config files: the value before the first change is kept, to put back.
+    want, reconfigure = {}, False
+    for key, value in sets.items():
+        section, _, name = key.partition(".")
+        if section == "input" and name in FILE_KEYS:
+            f, g, k, conv = FILE_KEYS[name]
+            want["\x1f".join((f, g, k))] = conv(value)
+        elif not (section == "input" and name.split(".")[-1] in DEVICE_KEYS):
+            print("mmsimpulse-shortcuts: %s has no KWin counterpart; left out" % key, file=log)
+    if any(k.startswith("kxkbrc") for k in want):
+        want.setdefault("kxkbrc\x1fLayout\x1fUse", "true")
+        if "kxkbrc\x1fLayout\x1fOptions" in want:
+            want.setdefault("kxkbrc\x1fLayout\x1fResetOldOptions", "true")
+    files = old["files"]
+    for fk in list(files):
+        if fk not in want:
+            kconfig(*fk.split("\x1f"), files.pop(fk))
+            reconfigure |= fk.startswith("kwinrc")
+    for fk, value in want.items():
+        f, g, k = fk.split("\x1f")
+        if fk not in files:
+            files[fk] = kread(f, g, k)
+        if kread(f, g, k) != value:
+            kconfig(f, g, k, value)
+            reconfigure |= f == "kwinrc"
+
+    # Pointing devices: touchpad.<key> for touchpads, <key> for every one.
+    dev_keys = {}
+    for key, value in sets.items():
+        name = key.split(".", 1)[1] if key.startswith("input.") else ""
+        if name in DEVICE_KEYS:
+            dev_keys[(name, False)] = value
+        elif name.startswith("touchpad.") and name[9:] in DEVICE_KEYS:
+            dev_keys[(name[9:], True)] = value
+    try:
+        import dbus
+        bus = dbus.SessionBus()
+        if reconfigure:
+            bus.call_blocking("org.kde.KWin", "/KWin", "org.kde.KWin", "reconfigure", "", [])
+        names = dbus.Interface(bus.get_object("org.kde.KWin", "/org/kde/KWin/InputDevice"),
+                               "org.freedesktop.DBus.Properties").Get(
+            "org.kde.KWin.InputDeviceManager", "devicesSysNames")
+        dropped = [n for n in old["devices"] if n not in {k for k, _ in dev_keys}]
+        for sysname in names:
+            props = dbus.Interface(bus.get_object("org.kde.KWin", "/org/kde/KWin/InputDevice/" + sysname),
+                                   "org.freedesktop.DBus.Properties")
+            get = lambda p: props.Get("org.kde.KWin.InputDevice", p)
+            if not get("pointer"):
+                continue
+            touchpad = bool(get("touchpad"))
+            for name in set(k for k, _ in dev_keys) | set(dropped):
+                value = dev_keys.get((name, True)) if touchpad and (name, True) in dev_keys \
+                    else dev_keys.get((name, False))
+                for prop, sig, conv, supports, default in DEVICE_KEYS[name]:
+                    if supports and not get(supports):
+                        continue
+                    if value is None:
+                        if not default:
+                            new = dbus.Double(1.0) if sig == "d" else None
+                        else:
+                            new = get(default)
+                    else:
+                        new = dbus.Double(conv(value)) if sig == "d" else dbus.Boolean(conv(value))
+                    if new is not None and get(prop) != new:
+                        props.Set("org.kde.KWin.InputDevice", prop, new)
+        old["devices"] = sorted({k for k, _ in dev_keys})
+    except Exception as exc:  # KWin not up yet, or a device that went away
+        print("mmsimpulse-shortcuts: input devices: %s" % exc, file=log)
+
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    json.dump(old, open(path, "w"))
+    apply_monitors([json.loads(l[8:]) for l in lines if l.startswith("monitor ")], log)
+
+
+def apply_monitors(monitors, log):
+    """Hyprland's monitor tables through kscreen-doctor, changing only what differs."""
+    if not monitors:
+        return
+    res = subprocess.run(["kscreen-doctor", "-j"], capture_output=True, text=True)
+    try:
+        outputs = {o["name"]: o for o in json.loads(res.stdout)["outputs"]}
+    except (ValueError, KeyError):
+        print("mmsimpulse-shortcuts: kscreen-doctor: %s" % res.stderr.strip(), file=log)
+        return
+    args, places = [], {}
+    for m in monitors:
+        name = str(m.get("output", ""))
+        o = outputs.get(name)
+        if not o:
+            print("mmsimpulse-shortcuts: monitor %r is not connected" % name, file=log)
+            continue
+        out = "output.%s." % name
+        mode = str(m.get("mode", "")).strip().lower()
+        if m.get("disabled") or mode == "disable":
+            if o["enabled"]:
+                args.append(out + "disable")
+            continue
+        if not o["enabled"]:
+            args.append(out + "enable")
+        modes = o.get("modes", [])
+        area = lambda x: x["size"]["width"] * x["size"]["height"]
+        pick = None
+        if mode in ("preferred", "") and o.get("preferredModes"):
+            pick = o["preferredModes"][0] if mode else None
+        elif mode == "highres":
+            pick = max(modes, key=lambda x: (area(x), x["refreshRate"]))["id"]
+        elif mode == "highrr":
+            pick = max(modes, key=lambda x: (x["refreshRate"], area(x)))["id"]
+        else:
+            g = re.fullmatch(r"(\d+)x(\d+)(?:@([\d.]+)(?:hz)?)?", mode)
+            same = [x for x in modes if g and (x["size"]["width"], x["size"]["height"]) == (int(g[1]), int(g[2]))]
+            if same:
+                rate = float(g[3]) if g[3] else max(x["refreshRate"] for x in same)
+                best = min(same, key=lambda x: abs(x["refreshRate"] - rate))
+                pick = best["id"]
+                if abs(best["refreshRate"] - rate) > 0.5:
+                    print("mmsimpulse-shortcuts: monitor %s has no %s; %s instead" % (name, mode, best["name"]),
+                          file=log)
+            elif mode:
+                print("mmsimpulse-shortcuts: monitor %s has no mode %s" % (name, mode), file=log)
+        if pick and str(pick) != str(o.get("currentModeId")):
+            args.append(out + "mode." + str(pick))
+        scale = m.get("scale")
+        if isinstance(scale, (int, float)) and abs(float(scale) - float(o["scale"])) > 1e-3:
+            args.append(out + "scale.%g" % float(scale))
+        rot = {0: "none", 1: "left", 2: "inverted", 3: "right"}.get(m.get("transform", 0) if
+                                                                    isinstance(m.get("transform", 0), int) else -1)
+        if rot is None:
+            print("mmsimpulse-shortcuts: monitor %s: transform %r has no KWin counterpart" %
+                  (name, m.get("transform")), file=log)
+        elif "transform" in m and {"none": 1, "left": 2, "inverted": 4, "right": 8}[rot] != o.get("rotation"):
+            args.append(out + "rotation." + rot)
+        pos = re.fullmatch(r"(-?\d+)x(-?\d+)", str(m.get("position", "")).strip())
+        if pos:
+            places[name] = (int(pos[1]), int(pos[2]))
+    # KWin takes no negative positions; Hyprland's are relative anyway.
+    if places:
+        dx, dy = min(x for x, _ in places.values()), min(y for _, y in places.values())
+        for name, (x, y) in places.items():
+            if (x - dx, y - dy) != (outputs[name]["pos"]["x"], outputs[name]["pos"]["y"]):
+                args.append("output.%s.position.%d,%d" % (name, x - dx, y - dy))
+    if args:
+        res = subprocess.run(["kscreen-doctor"] + args, capture_output=True, text=True)
+        if res.returncode != 0 or "failed" in res.stdout + res.stderr:
+            print("mmsimpulse-shortcuts: kscreen-doctor %s: %s" % (" ".join(args), (res.stdout + res.stderr).strip()),
+                  file=log)
+
+
 def watched(paths):
     """What the config files look like: their names and modification times."""
     out = []
@@ -352,7 +563,7 @@ def notify(text):
     """Say so on screen, as Hyprland's error bar does."""
     try:
         subprocess.run(["notify-send", "-a", "mmsimpulse", "-u", "critical", "mmsimpulse: config error",
-                        text[-500:] + "\nThe keys stay as they were."], capture_output=True, timeout=5)
+                        text[-500:] + "\nThe settings stay as they were."], capture_output=True, timeout=5)
     except (OSError, subprocess.TimeoutExpired):
         pass
 
@@ -382,7 +593,27 @@ def watch(kwin, source, rc, appdir, state, profile, config):
             names[k] = "%s-bind-%d.desktop" % (config, counter[0])
         return names[k]
 
-    last = watched(paths)
+    def devices():
+        try:
+            import dbus
+            return list(dbus.Interface(dbus.SessionBus().get_object("org.kde.KWin", "/org/kde/KWin/InputDevice"),
+                                       "org.freedesktop.DBus.Properties").Get(
+                "org.kde.KWin.InputDeviceManager", "devicesSysNames"))
+        except Exception:
+            return None
+
+    def settings(lines):
+        try:
+            apply_settings(lines, state, sys.stderr)
+        except Exception as exc:
+            print("mmsimpulse-shortcuts: %s" % exc, file=sys.stderr)
+
+    # The input and monitor settings, now that KWin is up.
+    res = subprocess.run([binds_bin, source], capture_output=True, text=True)
+    sys.stderr.write(res.stderr)
+    current = res.stdout.splitlines()
+    settings(current)
+    last, seen = watched(paths), devices()
     while True:
         time.sleep(1)
         try:
@@ -391,6 +622,10 @@ def watch(kwin, source, rc, appdir, state, profile, config):
             return 0  # the session ended
         now = watched(paths)
         if now == last:
+            plugged = devices()
+            if plugged is not None and plugged != seen:  # a mouse plugged in gets them too
+                seen = plugged
+                settings(current)
             continue
         time.sleep(0.3)  # an editor saving in steps
         if watched(paths) != now:
@@ -401,13 +636,14 @@ def watch(kwin, source, rc, appdir, state, profile, config):
         if res.returncode != 0:
             notify(res.stderr.strip())
             continue  # a config that does not read: keep the keys it had
-        imported = res.stdout.splitlines()
+        current = res.stdout.splitlines()
         try:
-            done = apply(rc, appdir, state, profile, config, imported, name_of)
+            done = apply(rc, appdir, state, profile, config, current, name_of)
             if done:
                 push(*done, config, sys.stderr)
         except Exception as exc:  # the session lives on; the next save tries again
             print("mmsimpulse-shortcuts: %s" % exc, file=sys.stderr)
+        settings(current)
 
 
 def main(argv):

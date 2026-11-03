@@ -236,6 +236,15 @@ local function enc(v)
 end
 local function act(kind, args) return { __act = kind, args = args } end
 local sourced = 0
+-- What the files being sourced may give: true for everything, or a set of
+-- categories (binds, input, monitors, autostart, env).
+local only = {}
+local function allowed(cat)
+  for _, o in ipairs(only) do
+    if o ~= true and not o[cat] then return false end
+  end
+  return true
+end
 local calls
 local stub
 stub = setmetatable({}, { __index = function() return stub end, __call = function() return nil end })
@@ -258,7 +267,7 @@ hl = setmetatable({
   get_windows = function() return {} end,
   get_current_submap = function() return "" end,
   bind = function(key, a, opts)
-    if type(opts) == "table" and opts.mouse then return end
+    if not allowed("binds") or (type(opts) == "table" and opts.mouse) then return end
     if type(a) == "function" then
       calls = {}
       pcall(a)
@@ -272,7 +281,38 @@ hl = setmetatable({
     end
   end,
 }, { __index = function() return stub end })
+-- Settings: C a config value, M a monitor, E an environment variable, X a
+-- command to start with the session.
+function hl.config(t)
+  for section, v in pairs(type(t) == "table" and t or {}) do
+    if type(v) == "table" and allowed(section) then
+      for k, x in pairs(v) do
+        if type(x) == "table" then
+          for k2, x2 in pairs(x) do out[#out + 1] = "C\t" .. section .. "." .. k .. "." .. k2 .. "\t" .. enc(x2) end
+        else
+          out[#out + 1] = "C\t" .. section .. "." .. k .. "\t" .. enc(x)
+        end
+      end
+    end
+  end
+end
+function hl.monitor(t) if allowed("monitors") and type(t) == "table" then out[#out + 1] = "M\t" .. enc(t) end end
+function hl.env(k, v) if allowed("env") then out[#out + 1] = "E\t" .. tostring(k) .. "\t" .. tostring(v) end end
+-- Hyprland runs hl.on("hyprland.start", f) once, when it starts.
+function hl.on(event, f)
+  if type(event) ~= "string" or not event:match("%.start$") or type(f) ~= "function" or not allowed("autostart") then return end
+  calls = {}
+  pcall(f)
+  local got = calls
+  calls = nil
+  for _, a in ipairs(got) do
+    if a.__act == "exec" then out[#out + 1] = "X\t" .. tostring(a.args.cmd) end
+  end
+end
+
 -- mmsimpulse's own config. A bind from a file it sources is marked as such.
+local BUILTIN = {}
+for name in pairs(package.loaded) do BUILTIN[name] = true end
 local function expand(p) return (tostring(p):gsub("^~/", (os.getenv("HOME") or "") .. "/")) end
 mms = {
   bind = hl.bind,
@@ -282,15 +322,39 @@ mms = {
   movetoworkspace = function(n) return act("mms.movetoworkspace", { n = n }) end,
   movetoworkspacesilent = function(n) return act("mms.movetoworkspacesilent", { n = n }) end,
   shell = function(name) out[#out + 1] = "S\t" .. tostring(name) end,
-  source = function(p)
+  config = hl.config,
+  monitor = hl.monitor,
+  env = hl.env,
+  on = hl.on,
+  exec_cmd = hl.exec_cmd,
+  exec_once = function(c) if allowed("autostart") then out[#out + 1] = "X\t" .. tostring(c) end end,
+  source = function(p, cats)
     p = expand(p)
-    if not p:match("%.lua$") then out[#out + 1] = "F\t" .. p; return end
-    local saved = package.path
+    local set = true
+    if type(cats) == "table" then
+      set = {}
+      for _, c in ipairs(cats) do set[c] = true end
+    end
+    if not p:match("%.lua$") then
+      if allowed("binds") and (set == true or set.binds) then out[#out + 1] = "F\t" .. p end
+      return
+    end
+    -- Its require("keybinds") is its own keybinds.lua, not this config's.
+    local saved, loaded = package.path, {}
+    for name, m in pairs(package.loaded) do
+      if not BUILTIN[name] then loaded[name] = m; package.loaded[name] = nil end
+    end
     package.path = (p:match("^(.*)/[^/]*$") or ".") .. "/?.lua;" .. saved
     sourced = sourced + 1
+    only[#only + 1] = set
     local ok, err = pcall(dofile, p)
+    only[#only] = nil
     sourced = sourced - 1
     package.path = saved
+    for name in pairs(package.loaded) do
+      if not BUILTIN[name] then package.loaded[name] = nil end
+    end
+    for name, m in pairs(loaded) do package.loaded[name] = m end
     if not ok then error(err, 0) end
   end,
 }
@@ -350,8 +414,12 @@ def hyprland_lua(directory):
 
 
 def mms_lua(path):
-    """(entries, shell) of mmsimpulse.lua, in the order it gives them."""
-    entries, shell = [], None
+    """(entries, shell, settings) of mmsimpulse.lua, in the order it gives them.
+
+    settings are lines for the session: `set <section.key>=<json>`,
+    `monitor <json>`, `env <name>=<value>`, `exec-once <command>`.
+    """
+    entries, shell, settings = [], None, []
     for tag, f in run_lua(path):
         if tag in "AB" and len(f) == 3:
             entries.append(bind_entry(f, tag == "A"))
@@ -360,7 +428,30 @@ def mms_lua(path):
         elif tag == "F":
             sub = hyprland_conf(f[0]) if f[0].endswith(".conf") else niri(f[0])
             entries += [e + (True,) for e in sub]
-    return entries, shell
+        elif tag == "C" and len(f) == 2:
+            settings.append("set %s=%s" % (f[0], lua_value(f[1])))
+        elif tag == "M":
+            settings.append("monitor " + json.dumps(lua_table(f[0])))
+        elif tag == "E" and len(f) == 2:
+            settings.append("env %s=%s" % (f[0], f[1]))
+        elif tag == "X":
+            settings.append("exec-once " + f[0])
+    return entries, shell, settings
+
+
+def lua_value(text):
+    """JSON of a value the Lua side wrote with %q (a string), or as is."""
+    try:
+        return json.dumps(json.loads(text))
+    except ValueError:
+        return json.dumps(text.strip('"'))
+
+
+def lua_table(text):
+    try:
+        return json.loads(text)
+    except ValueError:
+        return {}
 
 
 def shutil_which(name):
@@ -496,12 +587,12 @@ def lines(entries, marks=False):
 def main():
     source = (sys.argv[1] if len(sys.argv) > 1 else "") or "auto"
     if os.path.isfile(MMS):
-        entries, shell = mms_lua(MMS)
+        entries, shell, settings = mms_lua(MMS)
         if source == "shell":
             print(shell or "")
         else:
             print(MMS_MARK)
-            for line in lines(entries, marks=True):
+            for line in lines(entries, marks=True) + settings:
                 print(line)
         return 1 if FAILED else 0
     if source in ("none", "shell"):

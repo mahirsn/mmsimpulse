@@ -1,0 +1,7 @@
+-- Environment variables for everything in the session, the compositor too.
+-- Takes effect at the next login. The session keeps its own
+-- XDG_CURRENT_DESKTOP, WAYLAND_DISPLAY, DISPLAY and the like.
+--
+-- mms.env("XCURSOR_THEME", "Bibata-Modern-Classic")
+-- mms.env("XCURSOR_SIZE", "24")
+-- mms.env("ELECTRON_OZONE_PLATFORM_HINT", "auto")

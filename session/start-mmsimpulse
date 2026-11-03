@@ -114,6 +114,18 @@ SHORTCUTS=("${XDG_CONFIG_HOME:-$HOME/.config}/kglobalshortcutsrc"
 MMSIMPULSE_IMPORTED=""
 [[ -n "$SHELL_CMD" || -f "$MMS_LUA" ]] && MMSIMPULSE_IMPORTED="$(mmsimpulse-binds "$(profile binds)" 2>>"$LOG")"
 export MMSIMPULSE_IMPORTED
+# mms.env / hl.env, for everything in the session, the compositor too. Not
+# the ones the session itself depends on.
+while IFS= read -r line; do
+    [[ "$line" == "env "*=* ]] || continue
+    name="${line#env }"; name="${name%%=*}"
+    case "$name" in
+        XDG_CURRENT_DESKTOP|XDG_SESSION_DESKTOP|WAYLAND_DISPLAY|DISPLAY|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR|HOME|PATH)
+            echo "env $name is the session's own; left as it is" >&2 ;;
+        ""|[0-9]*|*[!A-Za-z0-9_]*) echo "env $name is not a variable name; left out" >&2 ;;
+        *) export "$name=${line#env "$name"=}" ;;
+    esac
+done <<<"$MMSIMPULSE_IMPORTED"
 mmsimpulse-shortcuts "${SHORTCUTS[@]}" 2>>"$LOG" && shortcuts_changed=1
 [[ -n "${shortcuts_changed:-}" ]] && command -v kbuildsycoca6 >/dev/null \
     && kbuildsycoca6 --noincremental >/dev/null 2>&1
@@ -350,6 +362,11 @@ if [[ -n "$SHELL_CMD" ]]; then
 ) &
 SHELL_PID=$!
 fi
+
+# mms.exec_once / hl.on("hyprland.start", ...): once, with the session.
+while IFS= read -r line; do
+    [[ "$line" == "exec-once "* ]] && (setsid sh -c "${line#exec-once }" >>"$LOG" 2>&1 </dev/null &)
+done <<<"$MMSIMPULSE_IMPORTED"
 
 # The compositor exiting is what ends the session.
 wait "$KWIN_PID"

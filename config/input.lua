@@ -1,0 +1,32 @@
+-- Keyboard, mouse and touchpad, as Hyprland's input section. Saved, it is
+-- applied at once, into KWin's own settings (kxkbrc, kcminputrc, kwinrc), so
+-- System Settings shows the same values. Removing a line puts back what was
+-- there before mmsimpulse set it. Remove the "-- " in front to use one.
+--
+-- mms.config({
+--   input = {
+--     kb_layout     = "us,tr",               -- layouts, the first is the default
+--     kb_variant    = ",",                   -- one per layout, "" for none
+--     kb_model      = "",
+--     kb_options    = "grp:alt_space_toggle", -- xkb options; "caps:escape" makes Caps Lock an Escape
+--     repeat_rate   = 25,                    -- keys per second while held
+--     repeat_delay  = 600,                   -- ms before a held key repeats
+--
+--     follow_mouse  = 0,                     -- 1: focus follows the mouse, 0: focus on click
+--
+--     sensitivity   = 0.0,                   -- -1.0 .. 1.0, every mouse and touchpad
+--     accel_profile = "adaptive",            -- or "flat"
+--     natural_scroll = false,
+--     left_handed   = false,
+--     scroll_factor = 1.0,
+--
+--     touchpad = {                           -- touchpads only, over the values above
+--       natural_scroll       = true,
+--       ["tap-to-click"]     = true,
+--       disable_while_typing = true,
+--       scroll_factor        = 1.0,
+--     },
+--   },
+-- })
+--
+-- A mouse or touchpad plugged in later gets these too.
