@@ -519,6 +519,10 @@ def apply_settings(lines, state, log):
 # looks and focus always.
 MATCH = {"class": "wmclass", "initial_class": "wmclass", "title": "title", "initial_title": "title"}
 APPLY, FORCE, REGEX = 3, 2, 3
+MATCH_KEYS = {"wmclass", "wmclassmatch", "wmclasscomplete", "title", "titlematch", "types"}
+DEFAULTS = {"excludefromcapture": "excludefromcapture=false", "noborder": "noborder=false",
+            "acceptfocus": "acceptfocus=true", "opacityactive": "opacityactive=100",
+            "opacityinactive": "opacityinactive=100"}
 NORMAL_AND_DIALOG = 1 | 32
 
 
@@ -634,6 +638,7 @@ def apply_rules(rules, sets, bus, log):
     general.pop("rules", None)
     general.pop("count", None)
     theirs = [g for g in listed.split(",") if g and not g.startswith("mmsimpulse-")]
+    order = [g for g in order if not g.startswith("mmsimpulse-back-")]
     names = ["mmsimpulse-%d" % (n + 1) for n in range(len(ours))]
     general["Order"] = ",".join(theirs + names)
     out = ["[General]"] + ["%s=%s" % kv for kv in general.items()]
@@ -642,13 +647,51 @@ def apply_rules(rules, sets, bus, log):
             out += ["", "[%s]" % g] + groups[g]
     for g, body in zip(names, ours):
         out += ["", "[%s]" % g] + body
-    text = "\n".join(out) + "\n"
-    if not theirs and not names:
-        if not old:
-            return False
-        text = ""
+
+    def render(lines, extra=()):
+        if not theirs and not names and not extra:
+            return ""
+        lines = list(lines)
+        if extra:
+            at = next(i for i, l in enumerate(lines) if l.startswith("Order="))
+            lines[at] = "Order=" + ",".join(theirs + names + [g for g, _ in extra])
+            for g, body in extra:
+                lines += ["", "[%s]" % g] + body
+        return "\n".join(lines) + "\n"
+
+    text = render(out)
     if text == old:
         return False
+    # KWin leaves a window as a removed "always" rule made it: hidden from
+    # capture, borderless, see-through. So what is no longer forced is first
+    # forced back to KWin's default, then the rule goes.
+    # KWin 6.8 saves noborder as decorationpolicy, and sorts the lines.
+    alias = {"decorationpolicy": "noborder"}
+
+    def forced(bodies):
+        out = set()
+        for b in bodies:
+            match = tuple(sorted(l for l in b if l.split("=", 1)[0] in MATCH_KEYS))
+            for l in b:
+                key = l.split("=", 1)[0]
+                if (key in DEFAULTS or key in alias) and "%srule=%d" % (key, FORCE) in b:
+                    out.add((match, alias.get(key, key)))
+        return out
+    dropped = forced(groups[g] for g in order if g.startswith("mmsimpulse-")) - forced(ours)
+    if dropped:
+        back = {}
+        for match, key in sorted(dropped):
+            # A border comes back only through "apply now" (measured).
+            back.setdefault(match, []).extend([DEFAULTS[key], "%srule=%d" % (key, 5 if key == "noborder" else FORCE)])
+        extra = [("mmsimpulse-back-%d" % (n + 1), ["Description=mmsimpulse: back to default"] + list(m) + b)
+                 for n, (m, b) in enumerate(back.items())]
+        with open(path, "w") as f:
+            f.write(render(out, extra))
+        try:
+            bus.call_blocking("org.kde.KWin", "/KWin", "org.kde.KWin", "reconfigure", "", [])
+            time.sleep(0.5)
+        except Exception as exc:
+            print("mmsimpulse-shortcuts: window rules: %s" % exc, file=log)
     with open(path, "w") as f:
         f.write(text)
     return True
