@@ -108,6 +108,21 @@ org.freedesktop.impl.portal.Secret=kwallet
 PORTAL
 fi
 
+# --- config ----------------------------------------------------------------
+# The user's own file, written once and never again. A Hyprland or niri
+# config found here is offered at its end, commented out.
+MMS_LUA="${XDG_CONFIG_HOME:-$HOME/.config}/$CONFIG/$CONFIG.lua"
+if [[ ! -f "$MMS_LUA" ]]; then
+    echo "==> config -> $MMS_LUA"
+    mkdir -p "$(dirname "$MMS_LUA")"
+    {
+        cat "$REPO/config/$CONFIG.lua"
+        for f in hypr/hyprland.lua hypr/hyprland.conf niri/config.kdl; do
+            [[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/$f" ]] && echo "-- mms.source(\"~/.config/$f\")"
+        done
+    } > "$MMS_LUA"
+fi
+
 # --- shortcuts -------------------------------------------------------------
 # The workspace-sharing effect, if the package installed it, without waiting
 # for the next login.

@@ -13,7 +13,15 @@ Prints profile lines (`bind <keys>=<command>`, `kwin <action>=<keys>`), which
 the session reads before the profile's own, so a profile still has the last
 word.
 
-Usage: mmsimpulse-binds [auto|hyprland|niri]
+With ~/.config/mmsimpulse/mmsimpulse.lua, that file is the config instead
+and nothing is read on its own: it binds keys with mms.bind (hl.bind works
+too) and takes in a Hyprland or niri config only where it says mms.source.
+Its lines come after the profile's (the first line says so), and a KWin
+action it binds gets exactly those keys (`kwin`), while one bound only in a
+sourced config gets them added (`kwin+`).
+
+Usage: mmsimpulse-binds [auto|hyprland|niri]   keys
+       mmsimpulse-binds shell                  the shell mmsimpulse.lua picks
 """
 
 import json
@@ -25,6 +33,8 @@ import sys
 
 HOME = os.path.expanduser("~")
 CONFIG = os.environ.get("XDG_CONFIG_HOME") or os.path.join(HOME, ".config")
+MMS = os.path.join(CONFIG, "mmsimpulse", "mmsimpulse.lua")
+MMS_MARK = "# mmsimpulse.lua"
 
 # ---------------------------------------------------------------------------
 # Keys
@@ -70,7 +80,63 @@ def kde_keys(mods, key):
         k = low.upper()
     else:
         return None  # modifier-only binds, mouse buttons, key codes, "=" and the like
+    if "Shift" in out and len(k) == 1 and not k.isalpha():
+        # KWin hands the daemon the character a key gives with Shift, and no
+        # Shift: Super+Shift+2 arrives as Super+@ on a US layout and as
+        # Super+' on a Turkish one, so the key is bound as those.
+        alts = shifted(k)
+        if alts:
+            mods_ = [m for m in MOD_ORDER if m in out and m != "Shift"]
+            return "\\t".join("+".join(mods_ + [a]) for a in alts)
     return "+".join([m for m in MOD_ORDER if m in out] + [k])
+
+
+def shifted(ch):
+    """What the key that types `ch` types with Shift, in each configured layout."""
+    if ch in SHIFTED:
+        return SHIFTED[ch]
+    out = []
+    try:
+        import ctypes, ctypes.util
+        x = ctypes.CDLL(ctypes.util.find_library("xkbcommon"))
+
+        class Names(ctypes.Structure):
+            _fields_ = [(f, ctypes.c_char_p) for f in ("rules", "model", "layout", "variant", "options")]
+        x.xkb_context_new.restype = ctypes.c_void_p
+        x.xkb_keymap_new_from_names.restype = ctypes.c_void_p
+        x.xkb_keymap_new_from_names.argtypes = [ctypes.c_void_p, ctypes.POINTER(Names), ctypes.c_int]
+        x.xkb_keymap_key_get_syms_by_level.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
+                                                       ctypes.c_uint32, ctypes.POINTER(ctypes.POINTER(ctypes.c_uint32))]
+        x.xkb_keysym_to_utf32.restype = ctypes.c_uint32
+        x.xkb_keymap_unref.argtypes = [ctypes.c_void_p]
+        ctx = x.xkb_context_new(0)
+        layouts = ["us"]
+        try:
+            m = re.search(r"^LayoutList=(.*)$", open(os.path.join(CONFIG, "kxkbrc")).read(), re.M)
+            layouts = [l for l in m.group(1).split(",") if l] or layouts
+        except (OSError, AttributeError):
+            pass
+        sym = lambda km, code, level: (lambda p: x.xkb_keysym_to_utf32(p[0])
+                                       if x.xkb_keymap_key_get_syms_by_level(km, code, 0, level, ctypes.byref(p))
+                                       else 0)(ctypes.POINTER(ctypes.c_uint32)())
+        for lay in layouts:
+            km = x.xkb_keymap_new_from_names(ctx, ctypes.byref(Names(None, None, lay.encode(), None, None)), 0)
+            if not km:
+                continue
+            for code in range(9, 256):
+                if sym(km, code, 0) == ord(ch.lower()):
+                    c = sym(km, code, 1)
+                    if c and chr(c).upper() not in out:
+                        out.append(chr(c).upper())
+                    break
+            x.xkb_keymap_unref(km)
+    except OSError:
+        pass
+    SHIFTED[ch] = out
+    return out
+
+
+SHIFTED = {}
 
 
 def split_combo(text, sep):
@@ -103,6 +169,19 @@ def command(cmd):
 def action(kind, args):
     """('bind', command) or ('kwin', KWin action name) for a dispatcher, or None."""
     args = args or {}
+    if kind == "kwin":
+        return ("kwin", str(args["name"])) if args.get("name") else None
+    if kind.startswith("mms.") and "workspace" in kind:
+        n = str(args.get("n", "")).strip()
+        step = {"prev": "Left", "-1": "Left", "next": "Right", "+1": "Right"}.get(n)
+        if kind == "mms.workspace":
+            return ("kwin", "mmsimpulse: %s workspace" % ("Previous" if step == "Left" else "Next")) if step \
+                else ("kwin", "mmsimpulse: Switch to workspace %s" % n) if n.isdigit() else None
+        if kind == "mms.movetoworkspacesilent":
+            return ("kwin", "Window One Desktop to the " + step) if step \
+                else ("kwin", "Window to Desktop %s" % n) if n.isdigit() else None
+        return ("bind", "busctl --user call org.mmsimpulse.KWin /Windows org.mmsimpulse.KWin "
+                        "MoveActiveWindowToDesktop ib %s true" % n) if n.isdigit() else None
     if kind == "exec":
         cmd = command(args.get("cmd", ""))
         return ("bind", cmd) if cmd else None
@@ -156,6 +235,7 @@ local function enc(v)
   return "null"
 end
 local function act(kind, args) return { __act = kind, args = args } end
+local sourced = 0
 local calls
 local stub
 stub = setmetatable({}, { __index = function() return stub end, __call = function() return nil end })
@@ -188,17 +268,41 @@ hl = setmetatable({
       a = got[1]
     end
     if type(a) == "table" and a.__act then
-      out[#out + 1] = "B\t" .. key .. "\t" .. a.__act .. "\t" .. enc(type(a.args) == "table" and a.args or { arg = a.args })
+      out[#out + 1] = (sourced > 0 and "A\t" or "B\t") .. key .. "\t" .. a.__act .. "\t" .. enc(type(a.args) == "table" and a.args or { arg = a.args })
     end
   end,
 }, { __index = function() return stub end })
+-- mmsimpulse's own config. A bind from a file it sources is marked as such.
+local function expand(p) return (tostring(p):gsub("^~/", (os.getenv("HOME") or "") .. "/")) end
+mms = {
+  bind = hl.bind,
+  exec = function(c) return act("exec", { cmd = c }) end,
+  kwin = function(name) return act("kwin", { name = name }) end,
+  workspace = function(n) return act("mms.workspace", { n = n }) end,
+  movetoworkspace = function(n) return act("mms.movetoworkspace", { n = n }) end,
+  movetoworkspacesilent = function(n) return act("mms.movetoworkspacesilent", { n = n }) end,
+  shell = function(name) out[#out + 1] = "S\t" .. tostring(name) end,
+  source = function(p)
+    p = expand(p)
+    if not p:match("%.lua$") then out[#out + 1] = "F\t" .. p; return end
+    local saved = package.path
+    package.path = (p:match("^(.*)/[^/]*$") or ".") .. "/?.lua;" .. saved
+    sourced = sourced + 1
+    local ok, err = pcall(dofile, p)
+    sourced = sourced - 1
+    package.path = saved
+    if not ok then error(err, 0) end
+  end,
+}
 package.path = arg[1] .. "/?.lua;" .. package.path
-local ok, err = pcall(dofile, arg[1] .. "/hyprland.lua")
+local ok, err = pcall(dofile, arg[2])
 io.write(table.concat(out, "\n"), "\n")
 if not ok then io.stderr:write(tostring(err), "\n"); os.exit(1) end
 """
 
-LUA_KINDS = {"exec": "exec", "window.close": "close", "window.kill": "kill",
+LUA_KINDS = {"exec": "exec", "kwin": "kwin", "mms.workspace": "mms.workspace",
+             "mms.movetoworkspace": "mms.movetoworkspace",
+             "mms.movetoworkspacesilent": "mms.movetoworkspacesilent", "window.close": "close", "window.kill": "kill",
              "window.fullscreen": "fullscreen", "window.pin": "pin", "focus": "focus",
              "window.move": "move", "window.resize": "resize"}
 
@@ -206,13 +310,19 @@ LUA_KINDS = {"exec": "exec", "window.close": "close", "window.kill": "kill",
 FAILED = []
 
 
-def hyprland_lua(directory):
+def run_lua(path):
+    """[(tag, fields)] of a Lua config run with the recording `hl` and `mms`.
+
+    B: a bind, A: a bind from a sourced file, S: mms.shell, F: mms.source of a
+    file that is not Lua.
+    """
     lua = next((p for p in ("lua5.4", "lua", "luajit") if shutil_which(p)), None)
     if not lua:
-        print("mmsimpulse-binds: no lua to read hyprland.lua with", file=sys.stderr)
+        print("mmsimpulse-binds: no lua to read %s with" % path, file=sys.stderr)
         return []
+    directory = os.path.dirname(path)
     try:
-        res = subprocess.run([lua, "-", directory], input=LUA, capture_output=True, text=True,
+        res = subprocess.run([lua, "-", directory, path], input=LUA, capture_output=True, text=True,
                              timeout=10, cwd=directory)
     except (OSError, subprocess.TimeoutExpired) as exc:
         print(f"mmsimpulse-binds: {exc}", file=sys.stderr)
@@ -220,20 +330,37 @@ def hyprland_lua(directory):
     if res.returncode != 0:
         # A config that stops halfway still gives the keys before that point,
         # but exits 1: during the session such a save leaves the keys alone.
-        print("mmsimpulse-binds: hyprland.lua: " + res.stderr.strip(), file=sys.stderr)
-        FAILED.append(directory)
-    out = []
-    for line in res.stdout.splitlines():
-        parts = line.split("\t", 3)
-        if len(parts) != 4 or parts[0] != "B":
-            continue
-        _, key, kind, raw = parts
-        try:
-            args = json.loads(raw)
-        except ValueError:
-            args = {}
-        out.append((split_combo(key, "+"), LUA_KINDS.get(kind, ""), args))
-    return out
+        print("mmsimpulse-binds: %s: %s" % (os.path.basename(path), res.stderr.strip()), file=sys.stderr)
+        FAILED.append(path)
+    return [(line[0], line[2:].split("\t", 2)) for line in res.stdout.splitlines() if line[1:2] == "\t"]
+
+
+def bind_entry(fields, add):
+    key, kind, raw = fields
+    try:
+        args = json.loads(raw)
+    except ValueError:
+        args = {}
+    return (split_combo(key, "+"), LUA_KINDS.get(kind, ""), args, add)
+
+
+def hyprland_lua(directory):
+    return [bind_entry(f, True) for tag, f in run_lua(os.path.join(directory, "hyprland.lua"))
+            if tag in "AB" and len(f) == 3]
+
+
+def mms_lua(path):
+    """(entries, shell) of mmsimpulse.lua, in the order it gives them."""
+    entries, shell = [], None
+    for tag, f in run_lua(path):
+        if tag in "AB" and len(f) == 3:
+            entries.append(bind_entry(f, tag == "A"))
+        elif tag == "S":
+            shell = f[0]
+        elif tag == "F":
+            sub = hyprland_conf(f[0]) if f[0].endswith(".conf") else niri(f[0])
+            entries += [e + (True,) for e in sub]
+    return entries, shell
 
 
 def shutil_which(name):
@@ -341,10 +468,13 @@ def read(source):
     return []
 
 
-def lines(entries):
-    """Profile lines. A key bound twice keeps its last binding, as in the compositors."""
-    binds, kwin = {}, {}
-    for (mods, key), kind, args in entries:
+def lines(entries, marks=False):
+    """Profile lines. A key bound twice keeps its last binding, as in the compositors.
+
+    With marks, a KWin action bound only by sourced configs is `kwin+`.
+    """
+    binds, kwin, own = {}, {}, set()
+    for (mods, key), kind, args, *add in entries:
         keys = kde_keys(mods, key)
         a = action(kind, args) if keys else None
         if not a:
@@ -352,17 +482,29 @@ def lines(entries):
         for d in (binds, kwin):
             d.pop(keys, None)
         (binds if a[0] == "bind" else kwin)[keys] = a[1]
+        if a[0] == "kwin" and not (add and add[0]):
+            own.add(a[1])
     out = ["bind %s=%s" % (k, c) for k, c in binds.items()]
     by_action = {}
     for k, name in kwin.items():
         by_action.setdefault(name, []).append(k)
-    out += ["kwin %s=%s" % (name, "\\t".join(ks)) for name, ks in by_action.items()]
+    out += ["kwin%s %s=%s" % ("+" if marks and name not in own else "", name, "\\t".join(ks))
+            for name, ks in by_action.items()]
     return out
 
 
 def main():
     source = (sys.argv[1] if len(sys.argv) > 1 else "") or "auto"
-    if source == "none":
+    if os.path.isfile(MMS):
+        entries, shell = mms_lua(MMS)
+        if source == "shell":
+            print(shell or "")
+        else:
+            print(MMS_MARK)
+            for line in lines(entries, marks=True):
+                print(line)
+        return 1 if FAILED else 0
+    if source in ("none", "shell"):
         return 0
     for line in lines(read(source)):
         print(line)

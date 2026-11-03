@@ -49,7 +49,7 @@ Write the shell's name into `~/.config/mmsimpulse/shell`. The name is:
 - a Quickshell config (`~/.config/quickshell/<name>/shell.qml`), or
 - a command of that name, such as `noctalia`.
 
-The shell's keys are the ones you already have for it on Hyprland (`hyprland.lua` or `hyprland.conf`) or niri (`config.kdl`): commands become global shortcuts, and closing, fullscreen, pinning, focusing, moving and resizing windows become KWin's. A profile's own keys come after them, and `binds=niri` or `binds=none` in a profile picks another source or none. Saving the profile or the Hyprland or niri config binds the keys again at once, as Hyprland does.
+A profile's keys are the shell's defaults. Your own keys go in `~/.config/mmsimpulse/mmsimpulse.lua`, which wins over the profile (below).
 
 Without a shell the session still starts, with KWin, Alt+Tab and `Meta+Return` for a terminal.
 
@@ -57,13 +57,28 @@ The lock screen stays KDE's: KWin has no `ext_session_lock_v1`.
 
 ## Keys
 
-`Meta+Return` opens a terminal (`xdg-terminal-exec`, else kitty) and the volume keys work, whatever the shell. The installer also binds the workspace keys:
+`~/.config/mmsimpulse/mmsimpulse.lua` is the config, in Lua as Hyprland's `hyprland.lua`. The installer writes it once, with the workspace keys; after that it is yours, and saving it binds the keys again at once. A mistake shows a notification and leaves the keys as they were.
+
+```lua
+local mod = "SUPER"
+mms.bind(mod .. " + Return", mms.exec("kitty"))
+mms.bind(mod .. " + Q", mms.kwin("Window Close"))        -- a KWin action, by its name
+mms.bind(mod .. " + 2", mms.workspace(2))                -- also movetoworkspace, movetoworkspacesilent
+mms.shell("dux")                                         -- instead of ~/.config/mmsimpulse/shell
+require("keybinds")                                      -- ~/.config/mmsimpulse/keybinds.lua
+mms.source("~/.config/hypr/hyprland.lua")                -- the keys of a Hyprland or niri config
+```
+
+`hl.bind` and `hl.dsp.*` work too. `mms.source` runs a Hyprland Lua config, or reads a `hyprland.conf` or niri `config.kdl`: commands become global shortcuts, and closing, fullscreen, pinning, focusing, moving and resizing windows become KWin's. The installer adds that line, commented out, for each such config it finds. Without `mmsimpulse.lua` the session takes the Hyprland or niri config's keys on its own, as before.
+
+`Meta+Return` opens a terminal (`xdg-terminal-exec`, else kitty) and the volume keys work, whatever the shell. The default workspace keys:
 
 ```
 Meta+1..0               switch workspace (monitor under the mouse)
 Meta+Alt+1..0           send window there
 Meta+Shift+1..0         send window there and follow
 Meta+Ctrl+Left/Right    previous / next workspace
+Meta+Shift+Left/Right   send window to the previous / next workspace
 ```
 
 ## Workspace sharing

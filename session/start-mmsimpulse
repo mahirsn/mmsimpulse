@@ -28,6 +28,10 @@ CONFIG=mmsimpulse
 # up: KWin, Alt+Tab, Meta+Return for a terminal. That is how to fix the name
 # without a TTY.
 SHELL_CONFIG="${MMSIMPULSE_SHELL:-}"
+# mms.shell("<name>") in mmsimpulse.lua comes before that file.
+MMS_LUA="${XDG_CONFIG_HOME:-$HOME/.config}/$CONFIG/$CONFIG.lua"
+[[ -n "$SHELL_CONFIG" || ! -f "$MMS_LUA" ]] ||
+    SHELL_CONFIG="$(PATH="$HOME/.local/bin:$PATH" mmsimpulse-binds shell 2>/dev/null | tr -d '[:space:]')"
 [[ -n "$SHELL_CONFIG" ]] ||
     SHELL_CONFIG="$(head -n1 "$HOME/.config/$CONFIG/shell" 2>/dev/null | tr -d '[:space:]')"
 PROFILE=""
@@ -97,8 +101,9 @@ if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
     exec dbus-run-session -- "$0" "$@"
 fi
 
-# A shell's keys come from its profile and from the user's Hyprland or niri
-# config (mmsimpulse-binds; `binds=hyprland|niri|none` in the profile picks),
+# A shell's keys come from its profile and from mmsimpulse.lua, or without
+# that file from the user's Hyprland or niri config (mmsimpulse-binds;
+# `binds=hyprland|niri|none` in the profile picks),
 # so it keeps the keys it has on another compositor. They are bound before the
 # compositor starts: its global shortcut daemon reads each entry once, when it
 # registers it. The format is in mmsimpulse-shortcuts.
@@ -107,7 +112,7 @@ SHORTCUTS=("${XDG_CONFIG_HOME:-$HOME/.config}/kglobalshortcutsrc"
     "${XDG_STATE_HOME:-$HOME/.local/state}/$CONFIG/shortcuts.json"
     "$PROFILE" "$CONFIG")
 MMSIMPULSE_IMPORTED=""
-[[ -n "$SHELL_CMD" ]] && MMSIMPULSE_IMPORTED="$(mmsimpulse-binds "$(profile binds)" 2>>"$LOG")"
+[[ -n "$SHELL_CMD" || -f "$MMS_LUA" ]] && MMSIMPULSE_IMPORTED="$(mmsimpulse-binds "$(profile binds)" 2>>"$LOG")"
 export MMSIMPULSE_IMPORTED
 mmsimpulse-shortcuts "${SHORTCUTS[@]}" 2>>"$LOG" && shortcuts_changed=1
 [[ -n "${shortcuts_changed:-}" ]] && command -v kbuildsycoca6 >/dev/null \
@@ -310,8 +315,9 @@ fi
 # monitors and the Meta+1..0 keys, whichever shell runs.
 mmsimpulse-kwin-bridge >/dev/null 2>&1 &
 
-# Saving the profile or the Hyprland or niri config binds its keys again, live.
-[[ -n "$SHELL_CMD" ]] && mmsimpulse-shortcuts --watch "$KWIN_PID" "$(profile binds)" "${SHORTCUTS[@]}" >>"$LOG" 2>&1 &
+# Saving mmsimpulse.lua, the profile or the Hyprland or niri config binds the
+# keys again, live.
+[[ -n "$SHELL_CMD" || -f "$MMS_LUA" ]] && mmsimpulse-shortcuts --watch "$KWIN_PID" "$(profile binds)" "${SHORTCUTS[@]}" >>"$LOG" 2>&1 &
 
 # ---------------------------------------------------------------------------
 # The shell, supervised

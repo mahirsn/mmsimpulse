@@ -35,7 +35,17 @@ import time
 # \t; a comma in a key is escaped, except in that one string.
 split = lambda v: re.split(r"(?<!\\),", v)
 keys_of = lambda part: [k.replace("\\,", ",") for k in part.split("\\t") if k and k != "none"]
+MMS_MARK = "# mmsimpulse.lua"
 join = lambda keys, esc=True: "\\t".join(k.replace(",", "\\,") if esc else k for k in keys) or "none"
+
+
+def split_bind(text):
+    """'Meta+)\\tMeta+==cmd' -> ('Meta+)\\tMeta+=', 'cmd'): '=' can be a key too."""
+    for m in re.finditer("=", text):
+        keys = text[:m.start()]
+        if keys and all(k and (not k.endswith("+") or k.endswith("++")) for k in keys.split("\\t")):
+            return keys.strip(), text[m.end():].strip()
+    return None
 
 
 def wanted(imported, profile):
@@ -44,14 +54,18 @@ def wanted(imported, profile):
     The keys read from the user's Hyprland or niri config come first, the
     profile's after them; a key bound twice keeps the later binding. A KWin
     action from the config gets its keys added to the ones it has; a profile's
-    sets them.
+    sets them. mmsimpulse.lua (its lines start with MMS_MARK) comes after the
+    profile instead, and says itself which of its actions add (`kwin+`).
     """
-    entries = [(l, True) for l in imported] + \
-              [(l, False) for l in (open(profile).read().splitlines() if profile else [])]
+    prof = [(l, False) for l in (open(profile).read().splitlines() if profile else [])]
+    if imported[:1] == [MMS_MARK]:
+        entries = prof + [(l, None) for l in imported[1:]]
+    else:
+        entries = [(l, True) for l in imported] + prof
     bound, acts = {}, {}
     for line, add in entries:
-        if line.startswith("bind ") and "=" in line:
-            keys, cmd = (x.strip() for x in line[5:].split("=", 1))
+        if line.startswith("bind ") and split_bind(line[5:]):
+            keys, cmd = split_bind(line[5:])
             for name, (ks, a) in list(acts.items()):
                 left = [k for k in ks if k != keys]
                 if a and not left:
@@ -59,11 +73,16 @@ def wanted(imported, profile):
                 else:
                     acts[name] = (left, a)
             bound[keys] = cmd
-        elif line.startswith("kwin ") and "=" in line:
-            action, keys = (x.strip() for x in line[5:].split("=", 1))
+        elif line.startswith(("kwin ", "kwin+ ")) and "=" in line:
+            plus = line.startswith("kwin+ ")
+            action, keys = (x.strip() for x in line[len("kwin+ " if plus else "kwin "):].split("=", 1))
+            add = plus if add is None else add
             ks = [k for k in keys.split("\\t") if k]
             for k in ks:
                 bound.pop(k, None)
+            if add and action in acts:  # added to what an earlier line gave it
+                ks = acts[action][0] + [k for k in ks if k not in acts[action][0]]
+                add = acts[action][1]
             acts[action] = (ks, add)
     return (list(bound.items()),
             [(a, "\\t".join(ks) or "none", add) for a, (ks, add) in acts.items()])
@@ -329,9 +348,21 @@ def watched(paths):
     return sig
 
 
+def notify(text):
+    """Say so on screen, as Hyprland's error bar does."""
+    try:
+        subprocess.run(["notify-send", "-a", "mmsimpulse", "-u", "critical", "mmsimpulse: config error",
+                        text[-500:] + "\nThe keys stay as they were."], capture_output=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
 def watch(kwin, source, rc, appdir, state, profile, config):
     conf = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
-    paths = [p for p in (profile, os.path.join(conf, "hypr"), os.path.join(conf, "niri")) if p]
+    # mmsimpulse.lua and what it requires, the profile, and the configs it
+    # may source.
+    paths = [p for p in (profile, os.path.join(conf, "mmsimpulse"),
+                         os.path.join(conf, "hypr"), os.path.join(conf, "niri")) if p]
     binds_bin = os.path.join(os.path.dirname(os.path.realpath(__file__)), "mmsimpulse-binds")
     names = {}
     for path in glob.glob(os.path.join(appdir, config + "-bind-*.desktop")):
@@ -365,14 +396,12 @@ def watch(kwin, source, rc, appdir, state, profile, config):
         if watched(paths) != now:
             continue
         last = now
-        if source == "none":
-            imported = []
-        else:
-            res = subprocess.run([binds_bin, source], capture_output=True, text=True)
-            sys.stderr.write(res.stderr)
-            if res.returncode != 0:
-                continue  # a config that does not read: keep the keys it had
-            imported = res.stdout.splitlines()
+        res = subprocess.run([binds_bin, source], capture_output=True, text=True)
+        sys.stderr.write(res.stderr)
+        if res.returncode != 0:
+            notify(res.stderr.strip())
+            continue  # a config that does not read: keep the keys it had
+        imported = res.stdout.splitlines()
         try:
             done = apply(rc, appdir, state, profile, config, imported, name_of)
             if done:
