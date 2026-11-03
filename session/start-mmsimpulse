@@ -235,6 +235,33 @@ done
 DISPLAY="$(mmsimpulse-xdisplay "$KWIN_PID")" && export DISPLAY
 [[ -n "${DISPLAY:-}" ]] || echo "Warning: no Xwayland display found; X11 clients will fail" >&2
 
+# KWin loads a plugin only when the interface id it was built with, which ends
+# in KWin's version, is one libkwin itself has. After a KWin update ours no
+# longer match, and KWin drops them without a word: the shell loses its window
+# list, workspaces, screenshots and the Hyprland and niri protocols. Say so.
+kwin_iids() { grep -aoE 'org\.kde\.kwin\.(PluginFactoryInterface|EffectPluginFactory)[0-9.]+' "$1" | sort -u; }
+LIBKWIN="$(ldd "$(command -v kwin_wayland)" 2>/dev/null | awk '/libkwin\.so/ {print $3; exit}')"
+QT_PLUGINS="$(qtpaths6 --query QT_INSTALL_PLUGINS 2>/dev/null || qmake6 -query QT_INSTALL_PLUGINS 2>/dev/null)"
+if [[ -f "$LIBKWIN" && -n "$QT_PLUGINS" ]]; then
+    have_iids="$(kwin_iids "$LIBKWIN")"
+    stale=""
+    for so in "$QT_PLUGINS"/kwin/plugins/kwin-mmsimpulse.so "$QT_PLUGINS"/kwin/effects/plugins/mmsimpulse_workspaceshare.so; do
+        [[ -f "$so" ]] || continue
+        iid="$(kwin_iids "$so")"
+        [[ -n "$iid" ]] && ! grep -qxF "$iid" <<<"$have_iids" && stale="${iid##*[A-Za-z]}"
+    done
+    if [[ -n "$stale" ]]; then
+        msg="mmsimpulse's KWin plugins were built for KWin $stale, and KWin $(kwin_wayland --version 2>/dev/null | awk '{print $2}') does not load them. Reinstall mmsimpulse (or run install.sh again from a checkout), then log in again."
+        echo "$msg" >>"$LOG"
+        # The shell brings the notification daemon; wait for it a while.
+        (for _ in $(seq 1 60); do
+            busctl --user status org.freedesktop.Notifications >/dev/null 2>&1 \
+                && exec notify-send -a mmsimpulse -u critical "mmsimpulse: KWin was updated" "$msg"
+            sleep 1
+        done) >/dev/null 2>&1 &
+    fi
+fi
+
 # ---------------------------------------------------------------------------
 # Services the shell depends on
 # ---------------------------------------------------------------------------
