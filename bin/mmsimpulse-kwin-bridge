@@ -17,6 +17,7 @@ Nothing here knows about tiling. mmsimpulse runs with [Tiling] Enabled=false.
 import ctypes
 import json
 import os
+import re
 import signal
 import socket
 import subprocess
@@ -175,6 +176,7 @@ ACTIONS = {
     "maximize": "workspace.activeWindow = w; workspace.slotWindowMaximize();",
     "center": "workspace.activeWindow = w; workspace.slotWindowCenter();",
     "nextOutput": "workspace.activeWindow = w; workspace.slotWindowToNextScreen();",
+    "pin": "w.onAllDesktops = !w.onAllDesktops;",
 }
 
 
@@ -395,6 +397,14 @@ def niri_events(old, new, layouts_changed=False):
     return out
 
 
+def track_focus(payload, window_ids, stamps, holder):
+    """Stamp the window that just got focus: KWin keeps no focus times to ask."""
+    active = next((normalize_uuid(w.get("id", "")) for w in payload.get("windows", []) if w.get("active")), None)
+    if active and active != getattr(holder, "focused", None):
+        stamps[window_ids.setdefault(active, len(window_ids) + 1)] = time.time_ns()
+    holder.focused = active
+
+
 class NiriIpc:
     """The socket. Lives in the bridge's main loop, next to KWin's state."""
 
@@ -433,10 +443,7 @@ class NiriIpc:
         except dbus.DBusException:
             return
         payload = self.bridge.payload
-        active = next((normalize_uuid(w.get("id", "")) for w in payload.get("windows", []) if w.get("active")), None)
-        if active and active != self.focused:
-            self.stamps[self.window_ids.setdefault(active, len(self.window_ids) + 1)] = time.time_ns()
-        self.focused = active
+        track_focus(payload, self.window_ids, self.stamps, self)
         # Modes change rarely and cost a process: asked again when the
         # monitors' layout changes.
         layout = [(o.get("name"), o.get("width"), o.get("height"), o.get("scale")) for o in payload.get("outputs", [])]
@@ -625,6 +632,406 @@ class NiriIpc:
             raise ValueError("mmsimpulse has no %s (niri action)" % name)
 
 
+# ---------------------------------------------------------------------------
+# Hyprland's IPC, for shells written for Hyprland
+# ---------------------------------------------------------------------------
+# Two sockets under $XDG_RUNTIME_DIR/hypr/<signature>/, as Hyprland's:
+# .socket.sock takes one request per connection ("j/clients", "dispatch
+# workspace 2", "[[BATCH]]a;b") and closes after the answer; .socket2.sock
+# streams events as "name>>data" lines. Hyprland's workspaces are already
+# mmsimpulse's: 1..10, each on one monitor at a time, so they map as they are.
+
+HYPR_VERSION = "0.55.0"
+
+
+def hypr_addr(wid):
+    return "0x%x" % (0x5d0000 + wid)
+
+
+def hypr_view(payload, desktops, window_ids, output_ids, stamps, modes=None):
+    """Hyprland's monitors, workspaces and clients, by name and id."""
+    by_uuid = {d[1]: int(d[0]) + 1 for d in desktops}
+    outs = payload.get("outputs", [])
+    for o in outs:
+        output_ids.setdefault(o.get("name", ""), len(output_ids))
+    focused_out = payload.get("cursorOutput") or payload.get("activeOutput") or (outs[0]["name"] if outs else "")
+    shown = {o.get("name", ""): by_uuid.get(o.get("currentDesktop", ""), 1) for o in outs}
+    order = sorted(stamps, key=lambda w: -stamps[w])
+
+    clients = []
+    for w in payload.get("windows", []):
+        uuid = normalize_uuid(w.get("id", ""))
+        wid = window_ids.setdefault(uuid, len(window_ids) + 1)
+        out = w.get("output") or focused_out
+        on = [by_uuid[u] for u in w.get("desktops", []) if u in by_uuid]
+        n = on[0] if on else shown.get(out, 1)
+        clients.append({
+            "address": hypr_addr(wid), "mapped": True, "hidden": bool(w.get("minimized")),
+            "at": [int(w.get("x", 0)), int(w.get("y", 0))], "size": [int(w.get("width", 0)), int(w.get("height", 0))],
+            "workspace": {"id": n, "name": str(n)}, "floating": True, "pseudo": False,
+            "monitor": output_ids.get(out, 0), "class": w.get("appId", ""), "title": w.get("title", ""),
+            "initialClass": w.get("appId", ""), "initialTitle": w.get("title", ""), "pid": w.get("pid") or -1,
+            "xwayland": False, "pinned": not on, "fullscreen": 2 if w.get("fullscreen") else 0,
+            "fullscreenClient": 2 if w.get("fullscreen") else 0, "grouped": [], "tags": [],
+            "swallowing": "0x0", "focusHistoryID": order.index(wid) if wid in order else len(order) + wid,
+            "inhibitingIdle": False, "xdgTag": "", "xdgDescription": "", "contentType": "none",
+            "_active": bool(w.get("active")), "_output": out, "_wid": wid, "_maximized": bool(w.get("maximized")),
+        })
+
+    # A workspace exists while a monitor shows it or a window is on it.
+    where = {n: out for out, n in shown.items()}
+    for c in clients:
+        where.setdefault(c["workspace"]["id"], c["_output"])
+    workspaces = []
+    for n in sorted(where):
+        mine = [c for c in clients if c["workspace"]["id"] == n]
+        last = min(mine, key=lambda c: c["focusHistoryID"]) if mine else None
+        workspaces.append({
+            "id": n, "name": str(n), "monitor": where[n], "monitorID": output_ids.get(where[n], 0),
+            "windows": len(mine), "hasfullscreen": any(c["fullscreen"] for c in mine),
+            "lastwindow": last["address"] if last else "0x0", "lastwindowtitle": last["title"] if last else "",
+            "ispersistent": False,
+        })
+
+    monitors = []
+    for o in outs:
+        name = o.get("name", "")
+        info = (modes or {}).get(name, ([], None, None))
+        cur = info[0][info[1]] if info[1] is not None and info[1] < len(info[0]) else None
+        scale = float(o.get("scale", 1))
+        n = shown.get(name, 1)
+        monitors.append({
+            "id": output_ids.get(name, 0), "name": name,
+            "description": " ".join(x for x in (o.get("make", ""), o.get("model", ""), o.get("serial", "")) if x),
+            "make": o.get("make", ""), "model": o.get("model", ""), "serial": o.get("serial", ""),
+            "width": cur["width"] if cur else int(o.get("width", 0) * scale),
+            "height": cur["height"] if cur else int(o.get("height", 0) * scale),
+            "refreshRate": cur["refresh_rate"] / 1000 if cur else 60.0,
+            "x": int(o.get("x", 0)), "y": int(o.get("y", 0)),
+            "activeWorkspace": {"id": n, "name": str(n)}, "specialWorkspace": {"id": 0, "name": ""},
+            "reserved": [0, 0, 0, 0], "scale": scale, "transform": 0, "focused": name == focused_out,
+            "dpmsStatus": True, "vrr": False, "solitary": "0", "activelyTearing": False,
+            "directScanoutTo": "0", "disabled": False, "currentFormat": "XRGB8888", "mirrorOf": "none",
+            "availableModes": ["%dx%d@%.2fHz" % (m["width"], m["height"], m["refresh_rate"] / 1000) for m in info[0]],
+        })
+    focused = next((c for c in clients if c["_active"]), None)
+    return {"monitors": monitors, "workspaces": workspaces, "clients": clients,
+            "focused_monitor": focused_out, "focused": focused}
+
+
+def public(client):
+    return {k: v for k, v in client.items() if not k.startswith("_")}
+
+
+def hypr_events(old, new):
+    """socket2 lines that take a client from one view to the next."""
+    if old is None:
+        return []
+    out = []
+    oldm, newm = {m["name"]: m for m in old["monitors"]}, {m["name"]: m for m in new["monitors"]}
+    for name, m in newm.items():
+        if name not in oldm:
+            out += ["monitoradded>>%s" % name, "monitoraddedv2>>%d,%s,%s" % (m["id"], name, m["description"])]
+    oldw, neww = {w["id"]: w for w in old["workspaces"]}, {w["id"]: w for w in new["workspaces"]}
+    for n, w in neww.items():
+        if n not in oldw:
+            out += ["createworkspace>>%s" % w["name"], "createworkspacev2>>%d,%s" % (n, w["name"])]
+        elif oldw[n]["monitor"] != w["monitor"]:
+            out += ["moveworkspace>>%s,%s" % (w["name"], w["monitor"]),
+                    "moveworkspacev2>>%d,%s,%s" % (n, w["name"], w["monitor"])]
+    fm, ofm = newm.get(new["focused_monitor"]), oldm.get(old["focused_monitor"])
+    if fm and (not ofm or fm["name"] != ofm["name"]):
+        ws = fm["activeWorkspace"]
+        out += ["focusedmon>>%s,%s" % (fm["name"], ws["name"]), "focusedmonv2>>%s,%d" % (fm["name"], ws["id"])]
+    elif fm and ofm and fm["activeWorkspace"] != ofm["activeWorkspace"]:
+        ws = fm["activeWorkspace"]
+        out += ["workspace>>%s" % ws["name"], "workspacev2>>%d,%s" % (ws["id"], ws["name"])]
+    for name, m in newm.items():  # another monitor changing what it shows
+        if name != new["focused_monitor"] and name in oldm and m["activeWorkspace"] != oldm[name]["activeWorkspace"]:
+            ws = m["activeWorkspace"]
+            out += ["moveworkspace>>%s,%s" % (ws["name"], name), "moveworkspacev2>>%d,%s,%s" % (ws["id"], ws["name"], name)]
+    oldc, newc = {c["address"]: c for c in old["clients"]}, {c["address"]: c for c in new["clients"]}
+    for a, c in newc.items():
+        hexa = a[2:]
+        b = oldc.get(a)
+        if b is None:
+            out.append("openwindow>>%s,%s,%s,%s" % (hexa, c["workspace"]["name"], c["class"], c["title"]))
+            continue
+        if b["workspace"] != c["workspace"]:
+            out += ["movewindow>>%s,%s" % (hexa, c["workspace"]["name"]),
+                    "movewindowv2>>%s,%d,%s" % (hexa, c["workspace"]["id"], c["workspace"]["name"])]
+        if b["title"] != c["title"]:
+            out += ["windowtitle>>%s" % hexa, "windowtitlev2>>%s,%s" % (hexa, c["title"])]
+    for a in oldc:
+        if a not in newc:
+            out.append("closewindow>>%s" % a[2:])
+    fo, ff = old["focused"], new["focused"]
+    if (fo and fo["address"]) != (ff and ff["address"]):
+        out += ["activewindow>>%s,%s" % ((ff["class"], ff["title"]) if ff else ("", "")),
+                "activewindowv2>>%s" % (ff["address"][2:] if ff else "")]
+    if ff and fo and fo["address"] == ff["address"] and fo["fullscreen"] != ff["fullscreen"]:
+        out.append("fullscreen>>%d" % (1 if ff["fullscreen"] else 0))
+    for name in oldm:
+        if name not in newm:
+            out += ["monitorremoved>>%s" % name,
+                    "monitorremovedv2>>%d,%s,%s" % (oldm[name]["id"], name, oldm[name]["description"])]
+    for n, w in oldw.items():
+        if n not in neww:
+            out += ["destroyworkspace>>%s" % w["name"], "destroyworkspacev2>>%d,%s" % (n, w["name"])]
+    return out
+
+
+class HyprIpc:
+    """Hyprland's two sockets, next to KWin's state in the bridge's main loop."""
+
+    def __init__(self, bridge, directory, ids):
+        self.bridge, self.dir = bridge, directory
+        self.window_ids, self.output_ids, self.stamps = ids
+        self.view, self.events, self.layout, self.modes = None, [], None, {}
+        os.makedirs(directory, mode=0o700, exist_ok=True)
+        self.req = self.listen(os.path.join(directory, ".socket.sock"), self.request)
+        self.evt = self.listen(os.path.join(directory, ".socket2.sock"), self.subscribe)
+        try:
+            bridge.bus.add_signal_receiver(self.layout_switched, signal_name="layoutChanged",
+                                           dbus_interface="org.kde.KeyboardLayouts", path="/Layouts")
+        except dbus.DBusException:
+            pass
+
+    def listen(self, path, handler):
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.bind(path)
+        os.chmod(path, 0o600)
+        sock.listen(32)
+        sock.setblocking(False)
+        GLib.io_add_watch(sock.fileno(), GLib.IO_IN, lambda *_: handler(sock) or True)
+        return sock
+
+    # -- state ------------------------------------------------------------
+    def current(self):
+        if self.view is None:
+            self.refresh(send=False)
+        return self.view
+
+    def refresh(self, send=True):
+        try:
+            desktops = self.bridge.desktops()
+        except dbus.DBusException:
+            return
+        payload = self.bridge.payload
+        layout = [(o.get("name"), o.get("width"), o.get("height"), o.get("scale")) for o in payload.get("outputs", [])]
+        if layout != self.layout:
+            self.layout, self.modes = layout, kscreen_outputs()
+        new = hypr_view(payload, desktops, self.window_ids, self.output_ids, self.stamps, self.modes)
+        lines, self.view = hypr_events(self.view, new), new
+        if send:
+            for line in lines:
+                self.broadcast(line)
+
+    def keyboard(self):
+        try:
+            kb = self.bridge.bus.get_object("org.kde.keyboard", "/Layouts")
+            names = [str(l[2]) for l in kb.getLayoutsList(dbus_interface="org.kde.KeyboardLayouts")]
+            short = [str(l[0]) for l in kb.getLayoutsList(dbus_interface="org.kde.KeyboardLayouts")]
+            return names, short, int(kb.getLayout(dbus_interface="org.kde.KeyboardLayouts"))
+        except dbus.DBusException:
+            return [], [], 0
+
+    def layout_switched(self, idx, *_):
+        names = self.keyboard()[0]
+        if int(idx) < len(names):
+            self.broadcast("activelayout>>mmsimpulse-keyboard,%s" % names[int(idx)])
+
+    # -- sockets ----------------------------------------------------------
+    def subscribe(self, sock):
+        try:
+            conn, _ = sock.accept()
+        except OSError:
+            return
+        conn.setblocking(True)
+        self.events.append(conn)
+
+    def broadcast(self, line):
+        for conn in list(self.events):
+            try:
+                conn.sendall((line + "\n").encode())
+            except OSError:
+                self.events.remove(conn)
+                conn.close()
+
+    def request(self, sock):
+        try:
+            conn, _ = sock.accept()
+        except OSError:
+            return
+        conn.settimeout(1)
+        data = b""
+        try:
+            while True:  # one request; the client then waits for the answer
+                chunk = conn.recv(65536)
+                data += chunk
+                if not chunk or len(chunk) < 65536:
+                    break
+        except OSError:
+            pass
+        try:
+            text = data.decode(errors="replace").strip()
+            if text.startswith("[[BATCH]]"):
+                reply = "\n\n".join(self.answer(c.strip()) for c in text[9:].split(";") if c.strip())
+            else:
+                reply = self.answer(text)
+        except Exception as exc:  # a bad request answers, it does not take the bridge down
+            reply = "error: %s" % exc
+        try:
+            conn.sendall(reply.encode())
+        except OSError:
+            pass
+        conn.close()
+
+    def answer(self, text):
+        flags, _, rest = text.partition("/") if "/" in text.split(" ", 1)[0] else ("", "", text)
+        cmd, _, args = rest.partition(" ")
+        v = self.current()
+        as_json = "j" in flags
+        dump = lambda x: json.dumps(x, indent=2) if as_json else json.dumps(x)
+        if cmd == "version":
+            info = {"branch": "", "commit": "mmsimpulse", "version": HYPR_VERSION, "dirty": False,
+                    "commit_message": "", "commit_date": "", "tag": "v" + HYPR_VERSION, "commits": "0",
+                    "buildAquamarine": "", "buildHyprlang": "", "buildHyprutils": "", "buildHyprcursor": "",
+                    "buildHyprgraphics": "", "systemAquamarine": "", "systemHyprlang": "", "systemHyprutils": "",
+                    "systemHyprcursor": "", "systemHyprgraphics": "", "abiHash": "", "flags": []}
+            return dump(info) if as_json else "Hyprland %s (mmsimpulse: KWin answering Hyprland's IPC)" % HYPR_VERSION
+        if cmd == "status":
+            return dump({"configProvider": "hyprlang", "version": HYPR_VERSION})
+        if cmd == "monitors":
+            return dump(v["monitors"])
+        if cmd == "workspaces":
+            return dump(v["workspaces"])
+        if cmd == "activeworkspace":
+            m = next((m for m in v["monitors"] if m["focused"]), None)
+            n = m["activeWorkspace"]["id"] if m else 1
+            w = next((w for w in v["workspaces"] if w["id"] == n), None)
+            return dump(w or {"id": n, "name": str(n), "monitor": m["name"] if m else "", "monitorID": 0,
+                              "windows": 0, "hasfullscreen": False, "lastwindow": "0x0",
+                              "lastwindowtitle": "", "ispersistent": False})
+        if cmd == "clients":
+            return dump([public(c) for c in v["clients"]])
+        if cmd == "activewindow":
+            return dump(public(v["focused"]) if v["focused"] else {})
+        if cmd == "devices":
+            names, short, cur = self.keyboard()
+            kb = {"address": "0x1", "name": "mmsimpulse-keyboard", "rules": "", "model": "",
+                  "layout": ",".join(short), "variant": "", "options": "",
+                  "active_keymap": names[cur] if cur < len(names) else "", "active_layout_index": cur,
+                  "capsLock": False, "numLock": False, "main": True}
+            return dump({"mice": [], "keyboards": [kb], "tablets": [], "touch": [], "switches": []})
+        if cmd in ("layers", "binds", "animations", "workspacerules", "globalshortcuts", "layouts"):
+            return dump({} if cmd == "layers" else [])
+        if cmd == "getoption":
+            return dump({"option": args.strip(), "int": 0, "float": 0.0, "str": "", "set": False})
+        if cmd in ("keyword", "reload", "setcursor", "notify", "dismissnotify", "seterror", "decorations"):
+            return "ok"  # Hyprland's own settings: KWin has its own
+        if cmd == "dispatch":
+            return self.dispatch(args.strip(), v)
+        return "unknown request"
+
+    # -- dispatchers ------------------------------------------------------
+    def window(self, spec, v):
+        """A client by Hyprland's window spec, or the focused one."""
+        spec = spec.strip()
+        if not spec or spec == "activewindow":
+            return v["focused"]
+        kind, _, val = spec.partition(":") if ":" in spec else ("class", "", spec)
+        for c in v["clients"]:
+            if (kind == "address" and int(c["address"], 16) == int(val, 16)) or \
+               (kind in ("class", "initialclass") and re.search(val, c["class"])) or \
+               (kind in ("title", "initialtitle") and re.search(val, c["title"])) or \
+               (kind == "pid" and str(c["pid"]) == val):
+                return c
+        return None
+
+    def uuid(self, client):
+        return next((u for u, i in self.window_ids.items() if i == client["_wid"]), None) if client else None
+
+    def workspace_number(self, arg, v):
+        arg = arg.strip()
+        if arg.startswith("name:"):
+            arg = arg[5:]
+        if arg.isdigit():
+            return int(arg)
+        m = next((m for m in v["monitors"] if m["focused"]), None)
+        cur = m["activeWorkspace"]["id"] if m else 1
+        step = re.fullmatch(r"[emr]?([+-]\d+)", arg)
+        if step:
+            return min(max(cur + int(step.group(1)), 1), len(self.bridge.desktops()) or 10)
+        raise ValueError(arg)
+
+    def dispatch(self, text, v):
+        name, _, args = text.partition(" ")
+        b = self.bridge
+        if name == "workspace":
+            if args.strip() == "previous":
+                invoke_shortcut(b.bus, "kwin", "Switch to Previous Desktop")
+            else:
+                n = self.workspace_number(args, v)
+                invoke_shortcut(b.bus, "kwin", "mmsimpulse: Switch to workspace %d" % n)
+        elif name in ("movetoworkspace", "movetoworkspacesilent"):
+            ws, _, spec = args.partition(",")
+            n = self.workspace_number(ws, v)
+            c = self.window(spec, v)
+            if not c:
+                return "No such window"
+            b.WindowAction(self.uuid(c), "move", str(n))
+            if name == "movetoworkspace":
+                invoke_shortcut(b.bus, "kwin", "mmsimpulse: Switch to workspace %d" % n)
+        elif name == "focuswindow":
+            c = self.window(args, v)
+            if not c:
+                return "No such window"
+            b.WindowAction(self.uuid(c), "activate", "")
+        elif name in ("closewindow", "killwindow", "killactive", "forcekillactive"):
+            c = self.window(args if name in ("closewindow", "killwindow") else "", v)
+            if c:
+                b.WindowAction(self.uuid(c), "close", "")
+        elif name == "fullscreen":
+            c = v["focused"]
+            if c:
+                b.WindowAction(self.uuid(c), "maximize" if args.strip() == "1" else "fullscreen", "")
+        elif name == "pin":
+            c = self.window(args, v)
+            if c:
+                b.WindowAction(self.uuid(c), "pin", "")
+        elif name == "movefocus":
+            d = {"l": "Left", "r": "Right", "u": "Up", "d": "Down"}.get(args.strip()[:1])
+            if d:
+                invoke_shortcut(b.bus, "kwin", "Switch Window " + d)
+        elif name in ("exec", "execr"):
+            cmd = re.sub(r"^\[[^]]*\]\s*", "", args)  # [rules] in front: KWin rules do that here
+            subprocess.Popen(["sh", "-c", cmd], start_new_session=True,
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif name == "switchxkblayout":
+            names, _, cur = self.keyboard()
+            arg = args.split()[-1] if args.split() else "next"
+            idx = {"next": cur + 1, "prev": cur - 1}.get(arg, int(arg) if arg.lstrip("-").isdigit() else cur)
+            b.bus.get_object("org.kde.keyboard", "/Layouts").setLayout(
+                dbus.UInt32(idx % (len(names) or 1)), dbus_interface="org.kde.KeyboardLayouts")
+        elif name == "dpms":
+            state = args.split()[0] if args.split() else "toggle"
+            subprocess.Popen(["kscreen-doctor", "--dpms", "off" if state == "off" else "on"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif name == "exit":
+            subprocess.Popen(["sh", "-c", 'loginctl terminate-session "${XDG_SESSION_ID:-}" || pkill -x kwin_wayland'])
+        elif name in ("togglefloating", "setfloating", "settiled", "pseudo", "centerwindow"):
+            if name == "centerwindow" and v["focused"]:
+                b.WindowAction(self.uuid(v["focused"]), "center", "")
+        else:
+            return "Invalid dispatcher"
+        return "ok"
+
+
 def invoke_shortcut(bus, component, name):
     bus.get_object("org.kde.kglobalaccel", "/component/" + component).invokeShortcut(
         name, dbus_interface="org.kde.kglobalaccel.Component")
@@ -652,6 +1059,12 @@ class Bridge(dbus.service.Object):
         # niri's IPC, when the session asks for it (mms.ipc("niri")).
         path = os.environ.get("MMSIMPULSE_NIRI_SOCKET")
         self.niri = NiriIpc(self, path) if path else None
+        # Hyprland's, when it asks for that (mms.ipc("hyprland")); the window
+        # ids are shared, so both name a window alike.
+        his = os.environ.get("MMSIMPULSE_HYPRLAND_SIGNATURE")
+        ids = (self.niri.window_ids, self.niri.output_ids, self.niri.stamps) if self.niri else ({}, {}, {})
+        self.hypr = HyprIpc(self, os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "hypr", his), ids) \
+            if his else None
 
         bus.add_signal_receiver(
             self.schedule, dbus_interface=VDM_IFACE, bus_name=KWIN)
@@ -742,6 +1155,10 @@ class Bridge(dbus.service.Object):
         print(json.dumps(snapshot), flush=True)
         if self.niri:
             self.niri.refresh()
+        if self.hypr:
+            if not self.niri:
+                track_focus(self.payload, self.hypr.window_ids, self.hypr.stamps, self.hypr)
+            self.hypr.refresh()
         return GLib.SOURCE_REMOVE
 
     # -- KWin script lifecycle --------------------------------------------

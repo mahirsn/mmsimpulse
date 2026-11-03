@@ -115,18 +115,24 @@ MMSIMPULSE_IMPORTED=""
 [[ -n "$SHELL_CMD" || -f "$MMS_LUA" ]] && MMSIMPULSE_IMPORTED="$(mmsimpulse-binds "$(profile binds)" 2>>"$LOG")"
 export MMSIMPULSE_IMPORTED
 # A shell written for one compositor talks to it over that compositor's
-# socket: mms.ipc("niri") (or ipc=niri in the profile) has the bridge answer
-# niri's. Only the shell and what it starts see NIRI_SOCKET; the rest of the
-# session (portals, services) does not take this KWin for niri.
-IPC="$(sed -n 's/^ipc //p' <<<"$MMSIMPULSE_IMPORTED" | tail -n1)"
-[[ -n "$IPC" ]] || IPC="$(profile ipc)"
+# socket: mms.ipc("niri") or mms.ipc("hyprland") (or ipc=... in the profile)
+# has the bridge answer it. Only the shell and what it starts see NIRI_SOCKET
+# or HYPRLAND_INSTANCE_SIGNATURE; the rest of the session (portals, services)
+# does not take this KWin for another compositor.
+IPCS="$(sed -n 's/^ipc //p' <<<"$MMSIMPULSE_IMPORTED")"
+[[ -n "$IPCS" ]] || IPCS="$(profile ipc | tr ', ' '\n\n')"
 SHELL_ENV=()
-case "$IPC" in
-    niri) NIRI_SOCK="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$CONFIG-niri.$$.sock"
-          SHELL_ENV=(NIRI_SOCKET="$NIRI_SOCK") ;;
-    ""|none) ;;
-    *) echo "ipc $IPC: mmsimpulse answers niri's IPC only (ipc=niri); left out" >&2 ;;
-esac
+NIRI_SOCK="" HYPR_SIG=""
+for ipc in $IPCS; do
+    case "$ipc" in
+        niri) NIRI_SOCK="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$CONFIG-niri.$$.sock"
+              SHELL_ENV+=(NIRI_SOCKET="$NIRI_SOCK") ;;
+        hyprland) HYPR_SIG="${CONFIG}_$(date +%s)_$$"
+                  SHELL_ENV+=(HYPRLAND_INSTANCE_SIGNATURE="$HYPR_SIG") ;;
+        none) ;;
+        *) echo "ipc $ipc: mmsimpulse answers niri's and Hyprland's IPC only; left out" >&2 ;;
+    esac
+done
 
 # mms.env / hl.env, for everything in the session, the compositor too. Not
 # the ones the session itself depends on.
@@ -339,11 +345,12 @@ fi
 
 # The bridge loads the KWin script, and with it the workspace pool across
 # monitors and the Meta+1..0 keys, whichever shell runs.
-MMSIMPULSE_NIRI_SOCKET="${NIRI_SOCK:-}" mmsimpulse-kwin-bridge >/dev/null 2>>"$LOG" &
-# The shell asks the socket as soon as it starts.
-if [[ -n "${NIRI_SOCK:-}" ]]; then
-    for _ in $(seq 1 30); do [[ -S "$NIRI_SOCK" ]] && break; sleep 0.1; done
-fi
+MMSIMPULSE_NIRI_SOCKET="$NIRI_SOCK" MMSIMPULSE_HYPRLAND_SIGNATURE="$HYPR_SIG" \
+    mmsimpulse-kwin-bridge >/dev/null 2>>"$LOG" &
+# The shell asks the sockets as soon as it starts.
+for sock in ${NIRI_SOCK:+"$NIRI_SOCK"} ${HYPR_SIG:+"${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/hypr/$HYPR_SIG/.socket2.sock"}; do
+    for _ in $(seq 1 30); do [[ -S "$sock" ]] && break; sleep 0.1; done
+done
 
 # Saving mmsimpulse.lua, the profile or the Hyprland or niri config binds the
 # keys again, live.

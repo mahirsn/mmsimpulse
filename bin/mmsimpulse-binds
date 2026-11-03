@@ -326,7 +326,9 @@ mms = {
   movetoworkspace = function(n) return act("mms.movetoworkspace", { n = n }) end,
   movetoworkspacesilent = function(n) return act("mms.movetoworkspacesilent", { n = n }) end,
   shell = function(name) out[#out + 1] = "S\t" .. tostring(name) end,
-  ipc = function(name) out[#out + 1] = "I\t" .. tostring(name) end,
+  ipc = function(names)
+    for _, name in ipairs(type(names) == "table" and names or { names }) do out[#out + 1] = "I\t" .. tostring(name) end
+  end,
   config = hl.config,
   monitor = hl.monitor,
   window_rule = hl.window_rule,

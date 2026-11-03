@@ -21,18 +21,26 @@ require("misc")       -- focus on activation
 
 -- mms.shell("dux")   -- the shell to start, instead of ~/.config/mmsimpulse/shell
 
--- A shell written for niri
+-- A shell written for niri or Hyprland
 --
 -- Some shells talk to their compositor's own socket instead of standard
--- Wayland protocols (digit, and others written for niri). mms.ipc("niri")
--- has mmsimpulse answer niri's socket for them, from KWin's windows,
--- workspaces and monitors: the shell then sees a niri with ten workspaces on
--- every monitor and floating windows. Only the shell and what it starts see
--- it (NIRI_SOCKET); the rest of the session still knows it is KWin. A shell
--- that knows KDE already (noctalia, dux) does not need it, and may leave its
--- own KDE support for it. Takes effect at the next login.
+-- Wayland protocols: digit to niri's or Hyprland's, end4 and caelestia to
+-- Hyprland's. mms.ipc has mmsimpulse answer that socket for them, from
+-- KWin's windows, workspaces and monitors:
+--   "niri"      the shell sees a niri with ten workspaces on every monitor
+--               and floating windows (NIRI_SOCKET)
+--   "hyprland"  the shell sees a Hyprland with workspaces 1..10, each on one
+--               monitor at a time (HYPRLAND_INSTANCE_SIGNATURE); its
+--               `hyprctl` commands work when Hyprland's package is installed
+-- Only the shell and what it starts see it; the rest of the session still
+-- knows it is KWin. Actions with no KWin counterpart (niri's columns,
+-- Hyprland's layouts and special workspaces) answer an error. A shell that
+-- knows KDE already (noctalia, dux) does not need it, and may leave its own
+-- KDE support for it. Takes effect at the next login.
 --
 -- mms.ipc("niri")
+-- mms.ipc("hyprland")
+-- mms.ipc({ "niri", "hyprland" })  -- both; a shell that knows both may pick either
 
 -- Another compositor's config
 --
