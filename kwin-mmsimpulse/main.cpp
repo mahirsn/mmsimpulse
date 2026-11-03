@@ -2,13 +2,15 @@
 // wlroots compositors, niri and Hyprland expect, and KWin does not: the window
 // list (wlr-foreign-toplevel-management, ext-foreign-toplevel-list) and
 // workspaces (ext-workspace), and screenshots and window pictures (wlr-screencopy,
-// ext-image-copy-capture), and typing (zwp-virtual-keyboard). With
+// ext-image-copy-capture), typing (zwp-virtual-keyboard) and
+// display settings (wlr-output-management). With
 // them a Quickshell shell, waybar and the like show windows and workspaces on
 // KWin without knowing anything about it. It also keeps KWin's window
 // animations off such a shell's panels.
 
 #include "animations.h"
 #include "imagecopy.h"
+#include "outputmanagement.h"
 #include "screencopy.h"
 #include "toplevellist.h"
 #include "toplevels.h"
@@ -28,6 +30,7 @@ public:
         , m_screenCopy(std::make_unique<ScreenCopy>())
         , m_imageCopy(std::make_unique<ImageCopy>())
         , m_virtualKeyboards(std::make_unique<VirtualKeyboards>())
+        , m_outputManagement(std::make_unique<OutputManagement>())
         , m_workspaces(std::make_unique<ExtWorkspaces>())
         , m_animations(std::make_unique<LayerAnimations>())
     {
@@ -39,6 +42,7 @@ private:
     std::unique_ptr<ScreenCopy> m_screenCopy;
     std::unique_ptr<ImageCopy> m_imageCopy;
     std::unique_ptr<VirtualKeyboards> m_virtualKeyboards;
+    std::unique_ptr<OutputManagement> m_outputManagement;
     std::unique_ptr<ExtWorkspaces> m_workspaces;
     std::unique_ptr<LayerAnimations> m_animations;
 };
