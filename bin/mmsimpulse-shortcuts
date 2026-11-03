@@ -1,0 +1,396 @@
+#!/usr/bin/env python3
+"""The shell's keys as global shortcuts: the ones from the user's Hyprland or
+niri config (mmsimpulse-binds), then the profile's.
+
+  mmsimpulse-shortcuts <rc> <appdir> <state> <profile> <config>
+      At login, before the compositor starts: its global shortcut daemon reads
+      each entry once, when it registers it. The keys read from the config come
+      in $MMSIMPULSE_IMPORTED. Exits 1 when there was nothing to do.
+
+  mmsimpulse-shortcuts --watch <kwin pid> <binds source> <rc> <appdir> <state> <profile> <config>
+      During the session: when the profile or a Hyprland or niri config is
+      saved, the keys are bound again and handed to the running daemon, as
+      Hyprland does on save.
+
+Profile lines:
+  bind <keys>=<command>    a new global shortcut that runs the command
+  kwin <action>=<keys>     a KWin action, by its name in kglobalshortcutsrc
+
+Whatever else holds such a key gives it up for the session. What was changed
+is recorded and put back at the next login before the profile (or another
+one) is applied again, so changing or dropping the profile leaves the keys
+as they were.
+"""
+
+import glob
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+
+# A value is "active,default,friendly name"; [services] entries have only the
+# active part, read as one string. Keys inside a part are split by a literal
+# \t; a comma in a key is escaped, except in that one string.
+split = lambda v: re.split(r"(?<!\\),", v)
+keys_of = lambda part: [k.replace("\\,", ",") for k in part.split("\\t") if k and k != "none"]
+join = lambda keys, esc=True: "\\t".join(k.replace(",", "\\,") if esc else k for k in keys) or "none"
+
+
+def wanted(imported, profile):
+    """(binds [(keys, command)], actions [(action, keys, add)]).
+
+    The keys read from the user's Hyprland or niri config come first, the
+    profile's after them; a key bound twice keeps the later binding. A KWin
+    action from the config gets its keys added to the ones it has; a profile's
+    sets them.
+    """
+    entries = [(l, True) for l in imported] + \
+              [(l, False) for l in (open(profile).read().splitlines() if profile else [])]
+    bound, acts = {}, {}
+    for line, add in entries:
+        if line.startswith("bind ") and "=" in line:
+            keys, cmd = (x.strip() for x in line[5:].split("=", 1))
+            for name, (ks, a) in list(acts.items()):
+                left = [k for k in ks if k != keys]
+                if a and not left:
+                    del acts[name]
+                else:
+                    acts[name] = (left, a)
+            bound[keys] = cmd
+        elif line.startswith("kwin ") and "=" in line:
+            action, keys = (x.strip() for x in line[5:].split("=", 1))
+            ks = [k for k in keys.split("\\t") if k]
+            for k in ks:
+                bound.pop(k, None)
+            acts[action] = (ks, add)
+    return (list(bound.items()),
+            [(a, "\\t".join(ks) or "none", add) for a, (ks, add) in acts.items()])
+
+
+def apply(rc, appdir, state, profile, config, imported, name_of):
+    """Write the keys into kglobalshortcutsrc and the bind entries.
+
+    name_of(keys, command) names each bind's entry. Returns the file's lines
+    before and after, or None when there was nothing to do.
+    """
+    lines = open(rc).read().split("\n") if os.path.exists(rc) else []
+    before = list(lines)
+    saved = json.load(open(state)) if os.path.exists(state) else {}
+    old_entries = glob.glob(os.path.join(appdir, config + "-bind-*.desktop"))
+    binds, actions = wanted(imported, profile)
+    if not saved and not old_entries and not binds and not actions:
+        return None
+
+    def find(group, key):
+        """(index of the group header, index of the key's line or None)."""
+        head, at = None, None
+        for i, line in enumerate(lines):
+            if line.startswith("["):
+                if head is not None:
+                    break
+                if line == "[%s]" % group:
+                    head = i
+            elif head is not None and line.split("=", 1)[0] == key:
+                at = i
+        return head, at
+
+    def get(group, key):
+        _, at = find(group, key)
+        return None if at is None else lines[at].split("=", 1)[1]
+
+    def put(group, key, value):
+        head, at = find(group, key)
+        if value is None:
+            if at is not None:
+                del lines[at]
+            return
+        if at is not None:
+            lines[at] = "%s=%s" % (key, value)
+        elif head is not None:
+            lines.insert(head + 1, "%s=%s" % (key, value))
+        else:
+            lines.extend(["", "[%s]" % group, "%s=%s" % (key, value)])
+
+    def change(group, key, value):
+        saved.setdefault("%s\x1f%s" % (group, key), get(group, key))
+        put(group, key, value)
+
+    # Put back what the last login changed. An entry that is gone since (an older
+    # release's shell actions) has nothing to give the key back to.
+    for gk, value in saved.items():
+        group, key = gk.split("\x1f")
+        gone = re.match(r"services\]\[(%s-.*\.desktop)$" % re.escape(config), group)
+        if gone and not os.path.exists(os.path.join(appdir, gone.group(1))):
+            continue
+        put(group, key, value)
+    saved = {}
+    for path in old_entries:
+        os.remove(path)
+    lines[:] = [l for i, l in enumerate(lines)
+                if not (l.startswith("[services][%s-bind-" % config) and
+                        (i + 1 >= len(lines) or lines[i + 1].startswith("[") or not lines[i + 1]))]
+
+    claimed = {k for keys, _ in binds for k in keys_of(keys)} | \
+              {k for _, keys, _ in actions for k in keys_of(keys)}
+    group = None
+    for i, line in enumerate(list(lines)):
+        if line.startswith("["):
+            group = line[1:-1]
+            continue
+        if "=" not in line or line.startswith("_k_friendly_name"):
+            continue
+        key, value = line.split("=", 1)
+        parts = [value] if group.startswith("services]") else split(value)
+        held = keys_of(parts[0])
+        if claimed & set(held):
+            parts[0] = join([k for k in held if k not in claimed], not group.startswith("services]"))
+            change(group, key, ",".join(parts))
+
+    # An application entry bound to its own default key has no line in the file
+    # (the daemon drops it), and takes that key again when it registers. Such an
+    # entry gets an explicit binding without the claimed key.
+    for name, held in default_keys(appdir).items():
+        if name.startswith(config + "-bind-") or get("services][" + name, "_launch") is not None:
+            continue
+        if claimed & set(held):
+            change("services][" + name, "_launch", join([k for k in held if k not in claimed], False))
+
+    for action, keys, add in actions:
+        parts = split(get("kwin", action) or ",none,%s" % action)
+        parts[0] = join(([k for k in keys_of(parts[0]) if k not in claimed] if add else []) +
+                        [k for k in keys_of(keys) if not add or k not in keys_of(parts[0])])
+        change("kwin", action, ",".join(parts))
+
+    written = set()
+    for keys, cmd in binds:
+        name = name_of(keys, cmd)
+        written.add("[services][%s]" % name)
+        with open(os.path.join(appdir, name), "w") as f:
+            f.write("[Desktop Entry]\nType=Application\nName=%s: %s\nExec=%s\n"
+                    "NoDisplay=true\nTerminal=false\nX-KDE-GlobalAccel-CommandShortcut=true\n"
+                    "X-KDE-Shortcuts=%s\n" % (config, cmd, cmd,
+                                              ",".join(k.replace(",", "\\,") for k in keys_of(keys))))
+        change("services][" + name, "_launch", join(keys_of(keys), False))
+
+    # A bind group left over from an entry that is gone (the daemon keeps it)
+    # would give its keys to the next entry of that name.
+    group, out = None, []
+    for line in lines:
+        if line.startswith("["):
+            group = line
+        if not (group and group.startswith("[services][%s-bind-" % config) and group not in written):
+            out.append(line)
+    lines[:] = out
+
+    os.makedirs(os.path.dirname(state), exist_ok=True)
+    json.dump(saved, open(state, "w"))
+    open(rc, "w").write("\n".join(lines))
+    return before, lines
+
+
+def default_keys(appdir):
+    """{entry: its own keys} for the application entries that have keys."""
+    dirs = [appdir] + [os.path.join(d, "applications") for d in
+                       os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share").split(":")]
+    out = {}
+    for d in dirs:
+        for path in sorted(glob.glob(os.path.join(d, "*.desktop"))):
+            name = os.path.basename(path)
+            if name in out:
+                continue
+            try:
+                text = open(path, errors="replace").read()
+            except OSError:
+                continue
+            m = re.search(r"^X-KDE-Shortcuts=(.*)$", text, re.M)
+            out[name] = [k.strip() for k in m.group(1).split(",") if k.strip()] if m else []
+    return {n: ks for n, ks in out.items() if ks}
+
+
+# ---------------------------------------------------------------------------
+# Live
+# ---------------------------------------------------------------------------
+
+# Qt's key codes for the names kglobalshortcutsrc spells keys with
+# (QKeySequence::PortableText), as the daemon takes them over D-Bus.
+MODS = {"Meta": 0x10000000, "Ctrl": 0x04000000, "Alt": 0x08000000, "Shift": 0x02000000,
+        "Num": 0x20000000}
+NAMES = {"Esc": 0x01000000, "Tab": 0x01000001, "Backtab": 0x01000002, "Backspace": 0x01000003,
+         "Return": 0x01000004, "Enter": 0x01000005, "Ins": 0x01000006, "Del": 0x01000007,
+         "Pause": 0x01000008, "Print": 0x01000009, "SysReq": 0x0100000a, "Home": 0x01000010,
+         "End": 0x01000011, "Left": 0x01000012, "Up": 0x01000013, "Right": 0x01000014,
+         "Down": 0x01000015, "PgUp": 0x01000016, "PgDown": 0x01000017, "Space": 0x20,
+         "Menu": 0x01000055, "Volume Down": 0x01000070, "Volume Mute": 0x01000071,
+         "Volume Up": 0x01000072, "Media Play": 0x01000080, "Media Stop": 0x01000081,
+         "Media Previous": 0x01000082, "Media Next": 0x01000083, "Media Pause": 0x01000085,
+         "Toggle Media Play/Pause": 0x01000086, "Monitor Brightness Up": 0x010000b2,
+         "Monitor Brightness Down": 0x010000b3, "Microphone Mute": 0x01000113,
+         "Launch (C)": 0x010000ae}
+NAMES.update({"F%d" % n: 0x01000030 + n - 1 for n in range(1, 36)})
+
+
+def code(key):
+    """Qt's code for 'Meta+Shift+Left', or None for a name not in NAMES."""
+    mods, name = (key[:-2].split("+"), "+") if key.endswith("++") else \
+        (key.split("+")[:-1], key.split("+")[-1])
+    if any(m not in MODS for m in mods):
+        return None
+    if name in NAMES:
+        k = NAMES[name]
+    elif len(name) == 1 and 0x20 < ord(name) < 0x7f:
+        k = ord(name.upper())
+    else:
+        return None
+    return k | sum(MODS[m] for m in mods)
+
+
+def parse(lines):
+    """{(group, key): active keys} of kglobalshortcutsrc lines."""
+    out, group = {}, None
+    for line in lines:
+        if line.startswith("["):
+            group = line[1:-1]
+        elif group and "=" in line and not line.startswith("_k_friendly_name"):
+            key, value = line.split("=", 1)
+            out[(group, key)] = keys_of(value if group.startswith("services]") else split(value)[0])
+    return out
+
+
+def push(before, after, config, log):
+    """Hand what changed between two versions of the file to the daemon.
+
+    A bind entry is a new entry: the daemon picks up added and removed
+    application entries when the service cache changes (refreshServices),
+    with the keys the entry's file gives. It reads an entry's command only
+    then, so a bind whose command changed has a name not used before in the
+    session. Registering one over D-Bus (doRegister) gives its key two
+    shortcuts, one of which the daemon loses track of: the next press of the
+    key after the entry is gone crashes KWin. The other entries, which only
+    lose or get back keys, are told their keys.
+    """
+    import dbus
+    accel = dbus.Interface(dbus.SessionBus().get_object("org.kde.kglobalaccel", "/kglobalaccel"),
+                           "org.kde.KGlobalAccel")
+    old, new = parse(before), parse(after)
+    is_bind = lambda gk: gk[0].startswith("services][%s-bind-" % config)
+    ident = lambda gk: [gk[0][len("services]["):], gk[1]] * 2 if gk[0].startswith("services][") \
+        else [gk[0], gk[1]] * 2
+
+    def bind(gk):
+        if gk not in new:  # no line again: back to its own keys
+            accel.setForeignShortcutKeys(dbus.Array(ident(gk), "s"), accel.defaultShortcutKeys(ident(gk)))
+            return
+        seqs = []
+        for k in new[gk]:
+            c = code(k)
+            if c is None:
+                print("mmsimpulse-shortcuts: no key code for %r; it is bound at the next login" % k, file=log)
+                return
+            seqs.append(dbus.Struct((dbus.Array([c, 0, 0, 0], "i"),)))
+        accel.setForeignShortcutKeys(dbus.Array(ident(gk), "s"), dbus.Array(seqs, "(ai)"))
+
+    others = [gk for gk in set(old) | set(new) if not is_bind(gk) and old.get(gk) != new.get(gk)]
+    binds = {gk[0][len("services]["):] for gk in set(old) ^ set(new) if is_bind(gk)}
+    for gk in others:
+        bind(gk)
+    if binds:
+        subprocess.run(["kbuildsycoca6"], capture_output=True)
+        # The daemon refreshes on its own, in a second or two.
+        path = lambda n: "/component/" + re.sub(r"[^A-Za-z0-9]", "_", n)
+        for _ in range(40):
+            have = {str(c) for c in accel.allComponents()}
+            if all((path(n) in have) == (("services][" + n, "_launch") in new) for n in binds):
+                break
+            time.sleep(0.25)
+        else:
+            print("mmsimpulse-shortcuts: the shortcut daemon did not pick up the new keys", file=log)
+    # Once more now that the removed binds have let go of their keys.
+    for gk in others:
+        bind(gk)
+
+
+def watched(paths):
+    """What the config files look like: their names and modification times."""
+    out = []
+    for p in paths:
+        if os.path.isdir(p):
+            for d, _, files in os.walk(p, followlinks=True):
+                out += [os.path.join(d, f) for f in files]
+        else:
+            out.append(p)
+    sig = []
+    for f in sorted(out):
+        try:
+            sig.append((f, os.stat(f).st_mtime_ns))
+        except OSError:
+            pass
+    return sig
+
+
+def watch(kwin, source, rc, appdir, state, profile, config):
+    conf = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    paths = [p for p in (profile, os.path.join(conf, "hypr"), os.path.join(conf, "niri")) if p]
+    binds_bin = os.path.join(os.path.dirname(os.path.realpath(__file__)), "mmsimpulse-binds")
+    names = {}
+    for path in glob.glob(os.path.join(appdir, config + "-bind-*.desktop")):
+        text = open(path, errors="replace").read()
+        cmd = re.search(r"^Exec=(.*)$", text, re.M)
+        keys = re.search(r"^X-KDE-Shortcuts=(.*)$", text, re.M)
+        if cmd and keys:
+            ks = [k.replace("\\,", ",") for k in re.split(r"(?<!\\),", keys.group(1)) if k]
+            names[(join(ks, False), cmd.group(1))] = os.path.basename(path)
+    used = [int(m.group(1)) for n in names.values() for m in [re.search(r"-bind-(\d+)", n)] if m]
+    counter = [max(used, default=0)]
+
+    def name_of(keys, cmd):
+        k = (join(keys_of(keys), False), cmd)
+        if k not in names:
+            counter[0] += 1
+            names[k] = "%s-bind-%d.desktop" % (config, counter[0])
+        return names[k]
+
+    last = watched(paths)
+    while True:
+        time.sleep(1)
+        try:
+            os.kill(kwin, 0)
+        except OSError:
+            return 0  # the session ended
+        now = watched(paths)
+        if now == last:
+            continue
+        time.sleep(0.3)  # an editor saving in steps
+        if watched(paths) != now:
+            continue
+        last = now
+        if source == "none":
+            imported = []
+        else:
+            res = subprocess.run([binds_bin, source], capture_output=True, text=True)
+            sys.stderr.write(res.stderr)
+            if res.returncode != 0:
+                continue  # a config that does not read: keep the keys it had
+            imported = res.stdout.splitlines()
+        try:
+            done = apply(rc, appdir, state, profile, config, imported, name_of)
+            if done:
+                push(*done, config, sys.stderr)
+        except Exception as exc:  # the session lives on; the next save tries again
+            print("mmsimpulse-shortcuts: %s" % exc, file=sys.stderr)
+
+
+def main(argv):
+    if argv[:1] == ["--watch"]:
+        return watch(int(argv[1]), argv[2] or "auto", *argv[3:])
+    rc, appdir, state, profile, config = argv
+    imported = os.environ.get("MMSIMPULSE_IMPORTED", "").splitlines()
+    n = iter(range(1, 10 ** 6))
+    done = apply(rc, appdir, state, profile, config, imported,
+                 lambda keys, cmd: "%s-bind-%d.desktop" % (config, next(n)))
+    return 0 if done else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

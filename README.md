@@ -49,7 +49,7 @@ Write the shell's name into `~/.config/mmsimpulse/shell`. The name is:
 - a Quickshell config (`~/.config/quickshell/<name>/shell.qml`), or
 - a command of that name, such as `noctalia`.
 
-The shell's keys are the ones you already have for it on Hyprland (`hyprland.lua` or `hyprland.conf`) or niri (`config.kdl`): commands become global shortcuts, and closing, fullscreen, pinning, focusing, moving and resizing windows become KWin's. A profile's own keys come after them, and `binds=niri` or `binds=none` in a profile picks another source or none.
+The shell's keys are the ones you already have for it on Hyprland (`hyprland.lua` or `hyprland.conf`) or niri (`config.kdl`): commands become global shortcuts, and closing, fullscreen, pinning, focusing, moving and resizing windows become KWin's. A profile's own keys come after them, and `binds=niri` or `binds=none` in a profile picks another source or none. Saving the profile or the Hyprland or niri config binds the keys again at once, as Hyprland does.
 
 Without a shell the session still starts, with KWin, Alt+Tab and `Meta+Return` for a terminal.
 

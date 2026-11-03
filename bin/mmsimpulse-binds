@@ -194,13 +194,16 @@ hl = setmetatable({
 }, { __index = function() return stub end })
 package.path = arg[1] .. "/?.lua;" .. package.path
 local ok, err = pcall(dofile, arg[1] .. "/hyprland.lua")
-if not ok then io.stderr:write(tostring(err), "\n") end
 io.write(table.concat(out, "\n"), "\n")
+if not ok then io.stderr:write(tostring(err), "\n"); os.exit(1) end
 """
 
 LUA_KINDS = {"exec": "exec", "window.close": "close", "window.kill": "kill",
              "window.fullscreen": "fullscreen", "window.pin": "pin", "focus": "focus",
              "window.move": "move", "window.resize": "resize"}
+
+
+FAILED = []
 
 
 def hyprland_lua(directory):
@@ -214,6 +217,11 @@ def hyprland_lua(directory):
     except (OSError, subprocess.TimeoutExpired) as exc:
         print(f"mmsimpulse-binds: {exc}", file=sys.stderr)
         return []
+    if res.returncode != 0:
+        # A config that stops halfway still gives the keys before that point,
+        # but exits 1: during the session such a save leaves the keys alone.
+        print("mmsimpulse-binds: hyprland.lua: " + res.stderr.strip(), file=sys.stderr)
+        FAILED.append(directory)
     out = []
     for line in res.stdout.splitlines():
         parts = line.split("\t", 3)
@@ -358,7 +366,7 @@ def main():
         return 0
     for line in lines(read(source)):
         print(line)
-    return 0
+    return 1 if FAILED else 0
 
 
 if __name__ == "__main__":
