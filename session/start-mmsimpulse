@@ -114,6 +114,20 @@ SHORTCUTS=("${XDG_CONFIG_HOME:-$HOME/.config}/kglobalshortcutsrc"
 MMSIMPULSE_IMPORTED=""
 [[ -n "$SHELL_CMD" || -f "$MMS_LUA" ]] && MMSIMPULSE_IMPORTED="$(mmsimpulse-binds "$(profile binds)" 2>>"$LOG")"
 export MMSIMPULSE_IMPORTED
+# A shell written for one compositor talks to it over that compositor's
+# socket: mms.ipc("niri") (or ipc=niri in the profile) has the bridge answer
+# niri's. Only the shell and what it starts see NIRI_SOCKET; the rest of the
+# session (portals, services) does not take this KWin for niri.
+IPC="$(sed -n 's/^ipc //p' <<<"$MMSIMPULSE_IMPORTED" | tail -n1)"
+[[ -n "$IPC" ]] || IPC="$(profile ipc)"
+SHELL_ENV=()
+case "$IPC" in
+    niri) NIRI_SOCK="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$CONFIG-niri.$$.sock"
+          SHELL_ENV=(NIRI_SOCKET="$NIRI_SOCK") ;;
+    ""|none) ;;
+    *) echo "ipc $IPC: mmsimpulse answers niri's IPC only (ipc=niri); left out" >&2 ;;
+esac
+
 # mms.env / hl.env, for everything in the session, the compositor too. Not
 # the ones the session itself depends on.
 while IFS= read -r line; do
@@ -325,7 +339,11 @@ fi
 
 # The bridge loads the KWin script, and with it the workspace pool across
 # monitors and the Meta+1..0 keys, whichever shell runs.
-mmsimpulse-kwin-bridge >/dev/null 2>&1 &
+MMSIMPULSE_NIRI_SOCKET="${NIRI_SOCK:-}" mmsimpulse-kwin-bridge >/dev/null 2>>"$LOG" &
+# The shell asks the socket as soon as it starts.
+if [[ -n "${NIRI_SOCK:-}" ]]; then
+    for _ in $(seq 1 30); do [[ -S "$NIRI_SOCK" ]] && break; sleep 0.1; done
+fi
 
 # Saving mmsimpulse.lua, the profile or the Hyprland or niri config binds the
 # keys again, live.
@@ -353,7 +371,7 @@ if [[ -n "$SHELL_CMD" ]]; then
             [[ -n "$DISPLAY" ]] && export DISPLAY \
                 && dbus-update-activation-environment --systemd DISPLAY 2>/dev/null
         fi
-        bash -c "exec $SHELL_CMD" >>"$LOG" 2>&1 &
+        env "${SHELL_ENV[@]}" bash -c "exec $SHELL_CMD" >>"$LOG" 2>&1 &
         child=$!
         wait "$child"
         echo "$SHELL_CONFIG exited, restarting in 2s..." >&2

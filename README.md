@@ -53,6 +53,8 @@ A profile's keys are the shell's defaults. Your own keys go in `~/.config/mmsimp
 
 Without a shell the session still starts, with KWin, Alt+Tab and `Meta+Return` for a terminal.
 
+A shell written for niri (it talks to `NIRI_SOCKET`, as digit does) works with `mms.ipc("niri")` in `mmsimpulse.lua`: mmsimpulse answers niri's socket from KWin's windows, workspaces (ten on every monitor) and monitors, with niri's event stream, for the shell and what it starts only. niri's own actions that have no KWin counterpart, such as scrolling columns, answer an error.
+
 The lock screen stays KDE's: KWin has no `ext_session_lock_v1`.
 
 ## Config

@@ -70,9 +70,15 @@ function push() {
         const screens = workspace.screens;
         for (let i = 0; i < screens.length; i++) {
             const desktop = workspace.currentDesktopForScreen(screens[i]);
+            const g = screens[i].geometry;
             outputs.push({
                 name: screens[i].name,
                 model: screens[i].model || "",
+                make: screens[i].manufacturer || "",
+                serial: screens[i].serialNumber || "",
+                // Scaled pixels, as niri's logical outputs.
+                x: g.x, y: g.y, width: g.width, height: g.height,
+                scale: screens[i].devicePixelRatio || 1,
                 currentDesktop: desktop ? String(desktop.id) : ""
             });
         }

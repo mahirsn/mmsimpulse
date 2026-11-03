@@ -21,6 +21,19 @@ require("misc")       -- focus on activation
 
 -- mms.shell("dux")   -- the shell to start, instead of ~/.config/mmsimpulse/shell
 
+-- A shell written for niri
+--
+-- Some shells talk to their compositor's own socket instead of standard
+-- Wayland protocols (digit, and others written for niri). mms.ipc("niri")
+-- has mmsimpulse answer niri's socket for them, from KWin's windows,
+-- workspaces and monitors: the shell then sees a niri with ten workspaces on
+-- every monitor and floating windows. Only the shell and what it starts see
+-- it (NIRI_SOCKET); the rest of the session still knows it is KWin. A shell
+-- that knows KDE already (noctalia, dux) does not need it, and may leave its
+-- own KDE support for it. Takes effect at the next login.
+--
+-- mms.ipc("niri")
+
 -- Another compositor's config
 --
 -- mms.source(path) runs a Hyprland Lua file, or reads a hyprland.conf or a

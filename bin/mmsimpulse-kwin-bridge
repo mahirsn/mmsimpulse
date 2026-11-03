@@ -18,8 +18,11 @@ import ctypes
 import json
 import os
 import signal
+import socket
+import subprocess
 import sys
 import tempfile
+import time
 
 import dbus
 import dbus.mainloop.glib
@@ -259,6 +262,375 @@ def window_script(window_uuid, action, value=""):
 
 
 # ---------------------------------------------------------------------------
+# niri's IPC, for shells written for niri
+# ---------------------------------------------------------------------------
+# A shell that talks to niri (NIRI_SOCKET; digit, waybar's niri modules and
+# the like) gets niri's socket here, answered from KWin's state: one JSON
+# request per line, {"Ok": ...} or {"Err": ...} back, and an event stream.
+#
+# niri gives each monitor its own workspaces, mmsimpulse shares one pool of
+# ten. So every monitor lists all ten, as the ext-workspace bridge does, and
+# the one a monitor shows is its active one. Workspace ids are stable:
+# 1000 * (monitor number) + n.
+
+NIRI_VERSION = "26.04 (mmsimpulse)"
+NIRI_TRANSFORM = {0: "Normal", 1: "90", 2: "180", 3: "270"}
+
+
+def kscreen_outputs():
+    """{name: (modes, current index, physical size)} from KWin, through kscreen-doctor."""
+    try:
+        res = subprocess.run(["kscreen-doctor", "-j"], capture_output=True, text=True, timeout=5)
+        outs = json.loads(res.stdout)["outputs"]
+    except (OSError, ValueError, KeyError, subprocess.TimeoutExpired):
+        return {}
+    info = {}
+    for o in outs:
+        modes = [{"width": m["size"]["width"], "height": m["size"]["height"],
+                  "refresh_rate": int(round(m["refreshRate"] * 1000)),
+                  "is_preferred": m["id"] in o.get("preferredModes", [])} for m in o.get("modes", [])]
+        ids = [m["id"] for m in o.get("modes", [])]
+        cur = ids.index(o["currentModeId"]) if o.get("currentModeId") in ids else None
+        size = o.get("sizeMM") or {}
+        info[o["name"]] = (modes, cur, [size["width"], size["height"]] if size.get("width") else None)
+    return info
+
+
+def niri_view(payload, desktops, window_ids, output_ids, stamps, modes=None):
+    """niri's Workspaces, Windows and Outputs, and the focused output and window."""
+    by_uuid = {d[1]: int(d[0]) + 1 for d in desktops}
+    count = len(desktops) or 1
+    outs = payload.get("outputs", [])
+    for o in outs:
+        output_ids.setdefault(o.get("name", ""), len(output_ids) + 1)
+    focused_out = payload.get("cursorOutput") or payload.get("activeOutput") or (outs[0]["name"] if outs else "")
+    shown = {o.get("name", ""): by_uuid.get(o.get("currentDesktop", ""), 1) for o in outs}
+    ws_id = lambda out, n: 1000 * output_ids.setdefault(out, len(output_ids) + 1) + n
+
+    windows, newest = [], {}
+    for w in payload.get("windows", []):
+        uuid = normalize_uuid(w.get("id", ""))
+        wid = window_ids.setdefault(uuid, len(window_ids) + 1)
+        out = w.get("output") or focused_out
+        on = [by_uuid[u] for u in w.get("desktops", []) if u in by_uuid]
+        n = on[0] if on else shown.get(out, 1)
+        space = ws_id(out, n)
+        stamp = stamps.get(wid)
+        o = next((o for o in outs if o.get("name") == out), {})
+        windows.append({
+            "id": wid, "title": w.get("title", ""), "app_id": w.get("appId", ""),
+            "pid": w.get("pid") or None, "workspace_id": space,
+            "is_focused": bool(w.get("active")), "is_floating": True, "is_urgent": False,
+            "layout": {"pos_in_scrolling_layout": None,
+                       "tile_size": [float(w.get("width", 0)), float(w.get("height", 0))],
+                       "window_size": [int(w.get("width", 0)), int(w.get("height", 0))],
+                       "tile_pos_in_workspace_view": [float(w.get("x", 0) - o.get("x", 0)),
+                                                      float(w.get("y", 0) - o.get("y", 0))],
+                       "window_offset_in_tile": [0.0, 0.0]},
+            "focus_timestamp": {"secs": stamp // 10 ** 9, "nanos": stamp % 10 ** 9} if stamp else None,
+        })
+        if not w.get("minimized") and (space not in newest or (stamp or 0) > newest[space][0]):
+            newest[space] = (stamp or 0, wid)
+
+    workspaces = []
+    for o in outs:
+        out = o.get("name", "")
+        for n in range(1, count + 1):
+            active = shown.get(out) == n
+            workspaces.append({
+                "id": ws_id(out, n), "idx": n, "name": None, "output": out, "is_urgent": False,
+                "is_active": active, "is_focused": active and out == focused_out,
+                "active_window_id": newest.get(ws_id(out, n), (0, None))[1],
+            })
+
+    outputs = {}
+    for o in outs:
+        name = o.get("name", "")
+        outputs[name] = {
+            "name": name, "make": o.get("make", ""), "model": o.get("model", ""),
+            "serial": o.get("serial") or None, "physical_size": (modes or {}).get(name, ([], None, None))[2],
+            "modes": (modes or {}).get(name, ([], None, None))[0],
+            "current_mode": (modes or {}).get(name, ([], None, None))[1],
+            "is_custom_mode": False, "vrr_supported": False, "vrr_enabled": False, "max_bpc": None,
+            "logical": {"x": int(o.get("x", 0)), "y": int(o.get("y", 0)),
+                        "width": int(o.get("width", 0)), "height": int(o.get("height", 0)),
+                        "scale": float(o.get("scale", 1)), "transform": "Normal"},
+        }
+    focused = next((w["id"] for w in windows if w["is_focused"]), None)
+    return {"workspaces": workspaces, "windows": windows, "outputs": outputs,
+            "focused_output": focused_out, "focused_window": focused}
+
+
+def niri_events(old, new, layouts_changed=False):
+    """The events that take a client from one view to the next."""
+    if old is None:
+        return []
+    out = []
+    if [(w["id"], w["output"]) for w in old["workspaces"]] != [(w["id"], w["output"]) for w in new["workspaces"]]:
+        out.append({"WorkspacesChanged": {"workspaces": new["workspaces"]}})
+    else:
+        before = {w["id"]: w for w in old["workspaces"]}
+        for w in new["workspaces"]:
+            b = before[w["id"]]
+            if w["is_active"] and (not b["is_active"] or w["is_focused"] != b["is_focused"]):
+                out.append({"WorkspaceActivated": {"id": w["id"], "focused": w["is_focused"]}})
+            if w["active_window_id"] != b["active_window_id"]:
+                out.append({"WorkspaceActiveWindowChanged": {"workspace_id": w["id"],
+                                                             "active_window_id": w["active_window_id"]}})
+    before = {w["id"]: w for w in old["windows"]}
+    now = {w["id"]: w for w in new["windows"]}
+    for wid in before:
+        if wid not in now:
+            out.append({"WindowClosed": {"id": wid}})
+    for wid, w in now.items():
+        b = before.get(wid)
+        if b is None or {k: v for k, v in w.items() if k not in ("layout", "focus_timestamp", "is_focused")} != \
+                {k: v for k, v in b.items() if k not in ("layout", "focus_timestamp", "is_focused")}:
+            out.append({"WindowOpenedOrChanged": {"window": w}})
+    changes = [[wid, w["layout"]] for wid, w in now.items() if wid in before and before[wid]["layout"] != w["layout"]]
+    if changes:
+        out.append({"WindowLayoutsChanged": {"changes": changes}})
+    if old["focused_window"] != new["focused_window"]:
+        out.append({"WindowFocusChanged": {"id": new["focused_window"]}})
+    return out
+
+
+class NiriIpc:
+    """The socket. Lives in the bridge's main loop, next to KWin's state."""
+
+    def __init__(self, bridge, path):
+        self.bridge, self.path = bridge, path
+        self.window_ids, self.output_ids, self.stamps = {}, {}, {}
+        self.view, self.streams, self.focused = None, [], None
+        self.layout, self.modes = None, {}
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.bind(path)
+        os.chmod(path, 0o600)
+        self.sock.listen(16)
+        self.sock.setblocking(False)
+        GLib.io_add_watch(self.sock.fileno(), GLib.IO_IN, self.accept)
+        try:
+            bridge.bus.add_signal_receiver(self.layouts_changed, signal_name="layoutListChanged",
+                                           dbus_interface="org.kde.KeyboardLayouts", path="/Layouts")
+            bridge.bus.add_signal_receiver(self.layout_switched, signal_name="layoutChanged",
+                                           dbus_interface="org.kde.KeyboardLayouts", path="/Layouts")
+        except dbus.DBusException:
+            pass
+
+    # -- state ----------------------------------------------------------
+    def current(self):
+        if self.view is None:
+            self.refresh(send=False)
+        return self.view
+
+    def refresh(self, send=True):
+        try:
+            desktops = self.bridge.desktops()
+        except dbus.DBusException:
+            return
+        payload = self.bridge.payload
+        active = next((normalize_uuid(w.get("id", "")) for w in payload.get("windows", []) if w.get("active")), None)
+        if active and active != self.focused:
+            self.stamps[self.window_ids.setdefault(active, len(self.window_ids) + 1)] = time.time_ns()
+        self.focused = active
+        # Modes change rarely and cost a process: asked again when the
+        # monitors' layout changes.
+        layout = [(o.get("name"), o.get("width"), o.get("height"), o.get("scale")) for o in payload.get("outputs", [])]
+        if layout != self.layout:
+            self.layout, self.modes = layout, kscreen_outputs()
+        new = niri_view(payload, desktops, self.window_ids, self.output_ids, self.stamps, self.modes)
+        events, self.view = niri_events(self.view, new), new
+        if send:
+            for e in events:
+                self.broadcast(e)
+
+    def keyboard(self):
+        try:
+            kb = self.bridge.bus.get_object("org.kde.keyboard", "/Layouts")
+            names = [str(l[2]) for l in kb.getLayoutsList(dbus_interface="org.kde.KeyboardLayouts")]
+            return {"names": names, "current_idx": int(kb.getLayout(dbus_interface="org.kde.KeyboardLayouts"))}
+        except dbus.DBusException:
+            return {"names": [], "current_idx": 0}
+
+    def layouts_changed(self, *_):
+        self.broadcast({"KeyboardLayoutsChanged": {"keyboard_layouts": self.keyboard()}})
+
+    def layout_switched(self, idx, *_):
+        self.broadcast({"KeyboardLayoutSwitched": {"idx": int(idx)}})
+
+    # -- clients ----------------------------------------------------------
+    def accept(self, *_):
+        try:
+            conn, _ = self.sock.accept()
+        except OSError:
+            return True
+        conn.setblocking(False)
+        client = {"conn": conn, "buf": b"", "stream": False}
+        GLib.io_add_watch(conn.fileno(), GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR, self.readable, client)
+        return True
+
+    def readable(self, _fd, cond, client):
+        try:
+            data = client["conn"].recv(65536)
+        except BlockingIOError:
+            return True
+        except OSError:
+            data = b""
+        if not data or cond & (GLib.IO_HUP | GLib.IO_ERR):
+            # A client may shut down its side after asking for the event
+            # stream (niri msg does); the stream goes on until a write fails.
+            if not (client["stream"] and not data and not cond & GLib.IO_ERR):
+                self.drop(client)
+            return False
+        client["buf"] += data
+        while b"\n" in client["buf"]:
+            line, client["buf"] = client["buf"].split(b"\n", 1)
+            if line.strip():
+                self.answer(client, line)
+        return True
+
+    def send(self, client, obj):
+        try:
+            client["conn"].setblocking(True)
+            client["conn"].sendall((json.dumps(obj) + "\n").encode())
+            client["conn"].setblocking(False)
+        except OSError:
+            self.drop(client)
+
+    def drop(self, client):
+        if client in self.streams:
+            self.streams.remove(client)
+        try:
+            client["conn"].close()
+        except OSError:
+            pass
+
+    def broadcast(self, event):
+        for client in list(self.streams):
+            self.send(client, event)
+
+    def answer(self, client, line):
+        request = None
+        try:
+            request = json.loads(line)
+            reply = {"Ok": self.process(request)}
+        except Exception as exc:  # a bad request answers, it does not take the bridge down
+            reply = {"Err": str(exc)}
+        self.send(client, reply)
+        if request == "EventStream" and "Ok" in reply:
+            v = self.current()
+            client["stream"] = True
+            self.streams.append(client)
+            for e in ({"WorkspacesChanged": {"workspaces": v["workspaces"]}},
+                      {"WindowsChanged": {"windows": v["windows"]}},
+                      {"KeyboardLayoutsChanged": {"keyboard_layouts": self.keyboard()}},
+                      {"OverviewOpenedOrClosed": {"is_open": False}},
+                      {"ConfigLoaded": {"failed": False}}):
+                self.send(client, e)
+
+    # -- requests ---------------------------------------------------------
+    def process(self, request):
+        v = self.current()
+        simple = {
+            "Version": lambda: {"Version": NIRI_VERSION},
+            "Windows": lambda: {"Windows": v["windows"]},
+            "Workspaces": lambda: {"Workspaces": v["workspaces"]},
+            "Outputs": lambda: {"Outputs": v["outputs"]},
+            "FocusedOutput": lambda: {"FocusedOutput": v["outputs"].get(v["focused_output"])},
+            "FocusedWindow": lambda: {"FocusedWindow": next((w for w in v["windows"] if w["is_focused"]), None)},
+            "KeyboardLayouts": lambda: {"KeyboardLayouts": self.keyboard()},
+            "OverviewState": lambda: {"OverviewState": {"is_open": False}},
+            "Layers": lambda: {"Layers": []},
+            "Casts": lambda: {"Casts": []},
+            "EventStream": lambda: "Handled",
+        }
+        if isinstance(request, str) and request in simple:
+            return simple[request]()
+        if isinstance(request, dict) and "Action" in request:
+            action = request["Action"]
+            name, args = (action, {}) if isinstance(action, str) else next(iter(action.items()))
+            self.act(name, args or {}, v)
+            return "Handled"
+        raise ValueError("mmsimpulse does not answer %s" % json.dumps(request)[:80])
+
+    def uuid(self, wid, v):
+        if wid is None:
+            wid = v["focused_window"]
+        return next((u for u, i in self.window_ids.items() if i == wid), None)
+
+    def space(self, ref, v):
+        """(output, n) of a workspace reference."""
+        kind, val = next(iter(ref.items()))
+        if kind == "Id":
+            w = next((w for w in v["workspaces"] if w["id"] == val), None)
+            return (w["output"], w["idx"]) if w else None
+        if kind == "Index":
+            return v["focused_output"], int(val)
+        raise ValueError("workspace %s" % kind)
+
+    def act(self, name, args, v):
+        b = self.bridge
+        if name == "FocusWindow":
+            b.WindowAction(self.uuid(args.get("id"), v), "activate", "")
+        elif name == "CloseWindow":
+            b.WindowAction(self.uuid(args.get("id"), v), "close", "")
+        elif name in ("FullscreenWindow", "ToggleWindowedFullscreen"):
+            b.WindowAction(self.uuid(args.get("id"), v), "fullscreen", "")
+        elif name in ("MaximizeColumn", "MaximizeWindowToEdges"):
+            b.WindowAction(self.uuid(args.get("id"), v), "maximize", "")
+        elif name == "CenterWindow":
+            b.WindowAction(self.uuid(args.get("id"), v), "center", "")
+        elif name == "FocusWorkspace":
+            where = self.space(args["reference"], v)
+            if where:
+                b.SetDesktopForOutput(*where)
+        elif name in ("FocusWorkspaceUp", "FocusWorkspaceDown", "FocusWorkspacePrevious"):
+            shortcut = "mmsimpulse: %s workspace" % ("Next" if name == "FocusWorkspaceDown" else "Previous")
+            invoke_shortcut(b.bus, "kwin", shortcut)
+        elif name in ("MoveWindowToWorkspace", "MoveColumnToWorkspace"):
+            where = self.space(args["reference"], v)
+            target = self.uuid(args.get("window_id"), v)
+            if where and target:
+                b.WindowAction(target, "move", str(where[1]))
+                if args.get("focus", True):
+                    b.SetDesktopForOutput(*where)
+        elif name in ("ToggleWindowFloating", "SetWindowFloating", "SetWindowTiling",
+                      "SwitchFocusBetweenFloatingAndTiling", "FocusFloating", "FocusTiling"):
+            pass  # every window floats here
+        elif name == "SwitchLayout":
+            kb = b.bus.get_object("org.kde.keyboard", "/Layouts")
+            layout = args.get("layout")
+            n = len(self.keyboard()["names"]) or 1
+            cur = self.keyboard()["current_idx"]
+            idx = layout["Index"] if isinstance(layout, dict) else (cur + (1 if layout == "Next" else -1)) % n
+            kb.setLayout(dbus.UInt32(idx), dbus_interface="org.kde.KeyboardLayouts")
+        elif name in ("PowerOffMonitors", "PowerOnMonitors"):
+            subprocess.Popen(["kscreen-doctor", "--dpms", "off" if name == "PowerOffMonitors" else "on"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif name in ("ToggleOverview", "OpenOverview", "CloseOverview"):
+            invoke_shortcut(b.bus, "kwin", "Overview")
+        elif name == "Spawn":
+            subprocess.Popen(args.get("command") or [], start_new_session=True,
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif name == "SpawnSh":
+            subprocess.Popen(["sh", "-c", args.get("command", "")], start_new_session=True,
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif name == "Quit":
+            subprocess.Popen(["sh", "-c", 'loginctl terminate-session "${XDG_SESSION_ID:-}" || pkill -x kwin_wayland'])
+        else:
+            raise ValueError("mmsimpulse has no %s (niri action)" % name)
+
+
+def invoke_shortcut(bus, component, name):
+    bus.get_object("org.kde.kglobalaccel", "/component/" + component).invokeShortcut(
+        name, dbus_interface="org.kde.kglobalaccel.Component")
+
+
+# ---------------------------------------------------------------------------
 # D-Bus plumbing
 # ---------------------------------------------------------------------------
 
@@ -277,6 +649,9 @@ class Bridge(dbus.service.Object):
         self.payload = {"windows": [], "activeOutput": ""}
         self.pending = None
         self.oneshot = 0
+        # niri's IPC, when the session asks for it (mms.ipc("niri")).
+        path = os.environ.get("MMSIMPULSE_NIRI_SOCKET")
+        self.niri = NiriIpc(self, path) if path else None
 
         bus.add_signal_receiver(
             self.schedule, dbus_interface=VDM_IFACE, bus_name=KWIN)
@@ -344,14 +719,18 @@ class Bridge(dbus.service.Object):
         if self.pending is None:
             self.pending = GLib.timeout_add(DEBOUNCE_MS, self.emit)
 
+    def desktops(self):
+        vdm = dbus.Interface(
+            self.bus.get_object(KWIN, "/VirtualDesktopManager"),
+            "org.freedesktop.DBus.Properties")
+        return [(int(d[0]), str(d[1]), str(d[2])) for d in vdm.Get(VDM_IFACE, "desktops")]
+
     def state(self):
         vdm = dbus.Interface(
             self.bus.get_object(KWIN, "/VirtualDesktopManager"),
             "org.freedesktop.DBus.Properties")
-        desktops = [(int(d[0]), str(d[1]), str(d[2]))
-                    for d in vdm.Get(VDM_IFACE, "desktops")]
         current = str(vdm.Get(VDM_IFACE, "current"))
-        return build_snapshot(self.payload, desktops, current)
+        return build_snapshot(self.payload, self.desktops(), current)
 
     def emit(self):
         self.pending = None
@@ -361,6 +740,8 @@ class Bridge(dbus.service.Object):
             print(f"[bridge] KWin unreachable: {exc}", file=sys.stderr, flush=True)
             return GLib.SOURCE_REMOVE
         print(json.dumps(snapshot), flush=True)
+        if self.niri:
+            self.niri.refresh()
         return GLib.SOURCE_REMOVE
 
     # -- KWin script lifecycle --------------------------------------------

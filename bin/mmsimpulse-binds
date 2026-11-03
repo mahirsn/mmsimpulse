@@ -326,6 +326,7 @@ mms = {
   movetoworkspace = function(n) return act("mms.movetoworkspace", { n = n }) end,
   movetoworkspacesilent = function(n) return act("mms.movetoworkspacesilent", { n = n }) end,
   shell = function(name) out[#out + 1] = "S\t" .. tostring(name) end,
+  ipc = function(name) out[#out + 1] = "I\t" .. tostring(name) end,
   config = hl.config,
   monitor = hl.monitor,
   window_rule = hl.window_rule,
@@ -441,6 +442,8 @@ def mms_lua(path):
             settings.append("env %s=%s" % (f[0], f[1]))
         elif tag == "X":
             settings.append("exec-once " + f[0])
+        elif tag == "I":
+            settings.append("ipc " + f[0])
         elif tag == "W":
             settings.append("rule " + json.dumps(lua_table(f[0])))
     return entries, shell, settings
