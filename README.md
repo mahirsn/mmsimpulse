@@ -3,7 +3,14 @@
 A bare KWin Wayland session to run a shell of your choice on, with Hyprland-style workspaces. No Plasma, no session manager, no shell of its own.
 
 - Compositor: any KWin 6, tiling off (`[Tiling] Enabled=false` in `~/.config/kwinrc`).
-- Shells: KWin gets the window-list and workspace protocols that shells written for wlroots compositors, niri or Hyprland use (`zwlr_foreign_toplevel_management_v1`, `ext_workspace_v1`), so their task bars and workspace widgets work unchanged.
+- Shells: KWin gets the protocols that shells and tools written for wlroots compositors, niri or Hyprland use, so they work unchanged:
+  - window list: `zwlr_foreign_toplevel_management_v1`, `ext_foreign_toplevel_list_v1`
+  - workspaces: `ext_workspace_v1`
+  - screenshots, recording and window pictures (grim, wf-recorder, a shell's previews): `zwlr_screencopy_manager_v1`, `ext_image_copy_capture_manager_v1` with output and window sources
+  - typing (wtype, on-screen keyboards): `zwp_virtual_keyboard_manager_v1`, in the keys the current layout has
+  - screens (wlr-randr, kanshi): `zwlr_output_manager_v1`
+
+  As on wlroots compositors, any client may use them. Windows marked to be hidden from capture stay hidden.
 - Multi-monitor: one workspace pool across monitors with `[Windows] PerOutputVirtualDesktops=true`.
 
 ## Install
