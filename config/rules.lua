@@ -1,0 +1,26 @@
+-- Window rules, as Hyprland's hl.window_rule. Saved, they are written into
+-- KWin's own rules (System Settings > Window Rules shows them; your own rules
+-- there are left alone). Where a window goes, its size, workspace and state
+-- apply when it opens; opacity, focus and borders apply always.
+--
+-- match (regular expressions):
+--   class, initial_class    the app id (Wayland) or window class (X11)
+--   title, initial_title    the window title
+-- KWin rules cannot match on a window's state (float, fullscreen, xwayland,
+-- tags); a rule that does is left out and named in the log.
+--
+-- what it sets:
+--   workspace = "3"            open on workspace 3
+--   move = "100 100"           position, size = "800 600"
+--   center = true              open centred
+--   opacity = "0.9 0.7"        focused and other
+--   pin = true                 on every workspace
+--   above = true               kept above the others
+--   fullscreen = true, maximize = true
+--   no_focus = true            never takes the keyboard
+--   decorate = false           no title bar or border (also border_size = 0)
+--   no_screen_share = true     hidden from screenshots and screen sharing
+--
+-- mms.window_rule({ name = "pictures", match = { class = "^(imv|org.kde.gwenview)$" }, center = true, size = "1200 800" })
+-- mms.window_rule({ name = "passwords", match = { class = "^(proton-pass|org.keepassxc.KeePassXC)$" }, no_screen_share = true })
+-- mms.window_rule({ name = "music", match = { class = "^spotify$" }, workspace = "9" })

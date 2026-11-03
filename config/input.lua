@@ -1,7 +1,8 @@
 -- Keyboard, mouse and touchpad, as Hyprland's input section. Saved, it is
 -- applied at once, into KWin's own settings (kxkbrc, kcminputrc, kwinrc), so
 -- System Settings shows the same values. Removing a line puts back what was
--- there before mmsimpulse set it. Remove the "-- " in front to use one.
+-- there before mmsimpulse set it (for a mouse or touchpad setting, the
+-- device's own default). Remove the "-- " in front to use one.
 --
 -- mms.config({
 --   input = {

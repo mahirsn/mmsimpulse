@@ -226,7 +226,7 @@ local function enc(v)
   if t == "table" then
     local parts = {}
     for k, x in pairs(v) do
-      if type(k) == "string" and type(x) ~= "table" and type(x) ~= "function" then
+      if type(k) == "string" and type(x) ~= "function" and not (type(x) == "table" and x.__act) then
         parts[#parts + 1] = string.format("%q", k) .. ":" .. enc(x)
       end
     end
@@ -296,6 +296,10 @@ function hl.config(t)
     end
   end
 end
+function hl.window_rule(t) if allowed("rules") and type(t) == "table" then out[#out + 1] = "W\t" .. enc(t) end; return t end
+-- Hyprland's animation tree has no KWin counterpart yet; named in the log.
+function hl.animation(t) if allowed("animations") and type(t) == "table" then out[#out + 1] = "C\tanimation." .. tostring(t.leaf) .. "\t" .. enc(t) end end
+function hl.curve(name) if allowed("animations") then out[#out + 1] = "C\tcurve." .. tostring(name) .. "\ttrue" end end
 function hl.monitor(t) if allowed("monitors") and type(t) == "table" then out[#out + 1] = "M\t" .. enc(t) end end
 function hl.env(k, v) if allowed("env") then out[#out + 1] = "E\t" .. tostring(k) .. "\t" .. tostring(v) end end
 -- Hyprland runs hl.on("hyprland.start", f) once, when it starts.
@@ -324,6 +328,7 @@ mms = {
   shell = function(name) out[#out + 1] = "S\t" .. tostring(name) end,
   config = hl.config,
   monitor = hl.monitor,
+  window_rule = hl.window_rule,
   env = hl.env,
   on = hl.on,
   exec_cmd = hl.exec_cmd,
@@ -436,6 +441,8 @@ def mms_lua(path):
             settings.append("env %s=%s" % (f[0], f[1]))
         elif tag == "X":
             settings.append("exec-once " + f[0])
+        elif tag == "W":
+            settings.append("rule " + json.dumps(lua_table(f[0])))
     return entries, shell, settings
 
 

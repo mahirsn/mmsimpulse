@@ -1,0 +1,26 @@
+-- Looks, as Hyprland's general and decoration sections. Saved, applied at
+-- once, into KWin's own settings. Removing a line puts back what was there
+-- before mmsimpulse set it. Remove the "-- " in front to use one.
+--
+-- mms.config({
+--   general = {
+--     border_size   = 2,      -- window border, as the decoration theme draws it:
+--                             -- 0 none, about 2 tiny, 4 normal, 6 large ... (or "Normal", "Large")
+--     allow_tearing = false,  -- let fullscreen games tear for lower latency
+--   },
+--   decoration = {
+--     rounding         = 12,  -- corner radius; needs a rounded corners effect
+--                             -- (kwin-effect-rounded-corners), otherwise left out
+--     active_opacity   = 1.0, -- 0.0 .. 1.0, the focused window
+--     inactive_opacity = 1.0, -- the others
+--     dim_inactive     = false,
+--     dim_strength     = 0.25, -- 0.0 .. 1.0
+--     blur = {
+--       enabled = true,       -- KWin's blur behind see-through windows and panels
+--     },
+--   },
+-- })
+--
+-- Gaps, layouts, border colours and shadows have no KWin counterpart here
+-- (no tiling; colours and shadows come from the decoration theme): the log
+-- names them.

@@ -14,6 +14,10 @@ require("input")      -- keyboard layout, key repeat, mouse and touchpad
 require("monitors")   -- resolution, refresh rate, position, scale, rotation
 require("autostart")  -- programs to start with the session
 require("env")        -- environment variables
+require("decoration") -- borders, corners, opacity, blur, dimming
+require("rules")      -- window rules
+require("animations") -- animations on or off, and their speed
+require("misc")       -- focus on activation
 
 -- mms.shell("dux")   -- the shell to start, instead of ~/.config/mmsimpulse/shell
 
@@ -27,12 +31,13 @@ require("env")        -- environment variables
 --
 --   mms.source("~/.config/hypr/hyprland.lua", { "binds", "input", "monitors" })
 --       a whole config, but only the parts named: binds, input, monitors,
---       autostart, env. Without the list, a whole config also starts its
---       autostart programs (Hyprland's bar, wallpaper and the like) here.
+--       autostart, env, general, decoration, rules, animations, misc.
+--       Without the list, a whole config also starts its autostart programs
+--       (Hyprland's bar, wallpaper and the like) here.
 --
 -- What comes from there: commands become global shortcuts; close, kill,
 -- fullscreen, pin, focus, move and resize become the matching KWin actions;
--- input and monitor settings as in input.lua and monitors.lua. Workspace
--- binds, layouts, decorations and mouse binds are left out (the log names
--- each setting with no KWin counterpart). A KWin action bound only there
+-- the settings and rules as the files above describe them. Workspace
+-- binds, layouts and mouse binds are left out (the log names each setting
+-- with no KWin counterpart). A KWin action bound only there
 -- keeps its other keys. Remove the "-- " in front to use one.

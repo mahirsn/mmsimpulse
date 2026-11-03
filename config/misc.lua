@@ -1,0 +1,9 @@
+-- Odds and ends, as Hyprland's misc section. Saved, applied at once.
+-- Remove the "-- " in front to use one.
+--
+-- mms.config({
+--   misc = {
+--     focus_on_activate = false, -- true: a window that asks for focus gets it
+--                                -- (KWin's focus stealing prevention off)
+--   },
+-- })

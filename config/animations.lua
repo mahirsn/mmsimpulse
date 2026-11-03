@@ -1,0 +1,11 @@
+-- Animations. Saved, applied at once.
+--
+-- mms.config({
+--   animations = {
+--     enabled  = true,
+--     duration = 1.0,  -- KWin's animation speed: 0.5 is twice as fast, 2 half as fast
+--   },
+-- })
+--
+-- Hyprland's hl.animation and hl.curve (per animation styles and bezier
+-- curves) are not applied yet; the log names them.

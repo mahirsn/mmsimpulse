@@ -339,17 +339,41 @@ def push(before, after, config, log):
 # Settings: input and monitors, written into KWin's own configuration
 # ---------------------------------------------------------------------------
 
-# input.<key> of a config file: (file, group, key, value as the file has it).
+# A setting kept in a config file: (file, group, key, value as the file has it,
+# the effect to reload after it, if the file alone does not do it). None as
+# a value leaves the key as KWin's default.
 FOCUS = lambda v: "FocusFollowsMouse" if str(v) == "1" else "ClickToFocus"
+BOOL = lambda v: "true" if v in (True, 1, "true", "1", "yes") else "false"
+BORDERS = [(0, "None"), (2, "Tiny"), (4, "Normal"), (6, "Large"), (9, "VeryLarge"), (13, "Huge"),
+           (19, "VeryHuge")]
+BORDER = lambda v: v if isinstance(v, str) and not v.isdigit() else \
+    next((n for px, n in BORDERS if int(v) <= px), "Oversized")
+CORNERS = "kwin4_effect_shapecorners"
 FILE_KEYS = {
-    "kb_layout": ("kxkbrc", "Layout", "LayoutList", str),
-    "kb_variant": ("kxkbrc", "Layout", "VariantList", str),
-    "kb_model": ("kxkbrc", "Layout", "Model", str),
-    "kb_options": ("kxkbrc", "Layout", "Options", str),
-    "repeat_rate": ("kcminputrc", "Keyboard", "RepeatRate", str),
-    "repeat_delay": ("kcminputrc", "Keyboard", "RepeatDelay", str),
-    "follow_mouse": ("kwinrc", "Windows", "FocusPolicy", FOCUS),
+    "input.kb_layout": ("kxkbrc", "Layout", "LayoutList", str, None),
+    "input.kb_variant": ("kxkbrc", "Layout", "VariantList", str, None),
+    "input.kb_model": ("kxkbrc", "Layout", "Model", str, None),
+    "input.kb_options": ("kxkbrc", "Layout", "Options", str, None),
+    "input.repeat_rate": ("kcminputrc", "Keyboard", "RepeatRate", str, None),
+    "input.repeat_delay": ("kcminputrc", "Keyboard", "RepeatDelay", str, None),
+    "input.follow_mouse": ("kwinrc", "Windows", "FocusPolicy", FOCUS, None),
+    "general.border_size": ("kwinrc", "org.kde.kdecoration2", "BorderSize", BORDER, None),
+    "general.allow_tearing": ("kwinrc", "Compositing", "AllowTearing", BOOL, None),
+    "decoration.blur.enabled": ("kwinrc", "Plugins", "blurEnabled", BOOL, None),
+    "decoration.dim_inactive": ("kwinrc", "Plugins", "diminactiveEnabled", BOOL, None),
+    "decoration.dim_strength": ("kwinrc", "Effect-diminactive", "Strength",
+                                lambda v: str(round(float(v) * 100)), "diminactive"),
+    "decoration.rounding": ("kwinrc", "Round-Corners", "Size", lambda v: str(int(v)), CORNERS),
+    "decoration.rounding.inactive": ("kwinrc", "Round-Corners", "InactiveCornerRadius",
+                                     lambda v: str(int(v)), CORNERS),
+    "misc.focus_on_activate": ("kwinrc", "Windows", "FocusStealingPreventionLevel",
+                               lambda v: "0" if BOOL(v) == "true" else None, None),
+    "animations.enabled": ("kdeglobals", "KDE", "AnimationDurationFactor",
+                           lambda v: None if BOOL(v) == "true" else "0", None),
+    "animations.duration": ("kdeglobals", "KDE", "AnimationDurationFactor", lambda v: "%g" % float(v), None),
 }
+# Read elsewhere: the window rules, and the pointing devices below.
+RULE_KEYS = {"decoration.active_opacity", "decoration.inactive_opacity"}
 # input.<key> of each pointing device, through KWin's InputDevice objects:
 # (property, D-Bus type, value, property that says the device has it,
 #  property with the device's own default).
@@ -394,23 +418,41 @@ def apply_settings(lines, state, log):
     old = json.load(open(path)) if os.path.exists(path) else {"files": {}, "devices": []}
 
     # Config files: the value before the first change is kept, to put back.
-    want, reconfigure = {}, False
+    want, reconfigure, effects = {}, False, set()
+    if "decoration.rounding" in sets:  # both corners, as Hyprland's one radius
+        sets.setdefault("decoration.rounding.inactive", sets["decoration.rounding"])
     for key, value in sets.items():
         section, _, name = key.partition(".")
-        if section == "input" and name in FILE_KEYS:
-            f, g, k, conv = FILE_KEYS[name]
-            want["\x1f".join((f, g, k))] = conv(value)
-        elif not (section == "input" and name.split(".")[-1] in DEVICE_KEYS):
+        if key == "animations.duration" and BOOL(sets.get("animations.enabled", True)) == "false":
+            continue  # animations off wins
+        if key in FILE_KEYS:
+            f, g, k, conv, effect = FILE_KEYS[key]
+            if effect == CORNERS and not glob.glob("/usr/lib*/qt6/plugins/kwin/effects/plugins/%s.so" % CORNERS):
+                print("mmsimpulse-shortcuts: %s needs a rounded corners effect "
+                      "(kwin-effect-rounded-corners); left out" % key, file=log)
+                continue
+            try:
+                v = conv(value)
+            except (TypeError, ValueError):
+                print("mmsimpulse-shortcuts: %s = %r is not a value it takes" % (key, value), file=log)
+                continue
+            if v is not None:
+                want["\x1f".join((f, g, k))] = v
+            if effect:
+                effects.add(effect)
+        elif key not in RULE_KEYS and not (section == "input" and name.split(".")[-1] in DEVICE_KEYS):
             print("mmsimpulse-shortcuts: %s has no KWin counterpart; left out" % key, file=log)
     if any(k.startswith("kxkbrc") for k in want):
         want.setdefault("kxkbrc\x1fLayout\x1fUse", "true")
         if "kxkbrc\x1fLayout\x1fOptions" in want:
             want.setdefault("kxkbrc\x1fLayout\x1fResetOldOptions", "true")
     files = old["files"]
+    reloads = {fk: e for f, g, k, _, e in FILE_KEYS.values() if e for fk in ["\x1f".join((f, g, k))]}
     for fk in list(files):
         if fk not in want:
             kconfig(*fk.split("\x1f"), files.pop(fk))
             reconfigure |= fk.startswith("kwinrc")
+            effects.add(reloads.get(fk))
     for fk, value in want.items():
         f, g, k = fk.split("\x1f")
         if fk not in files:
@@ -418,6 +460,7 @@ def apply_settings(lines, state, log):
         if kread(f, g, k) != value:
             kconfig(f, g, k, value)
             reconfigure |= f == "kwinrc"
+    effects.discard(None)
 
     # Pointing devices: touchpad.<key> for touchpads, <key> for every one.
     dev_keys = {}
@@ -430,8 +473,12 @@ def apply_settings(lines, state, log):
     try:
         import dbus
         bus = dbus.SessionBus()
+        if apply_rules([json.loads(l[5:]) for l in lines if l.startswith("rule ")], sets, bus, log):
+            reconfigure = True
         if reconfigure:
             bus.call_blocking("org.kde.KWin", "/KWin", "org.kde.KWin", "reconfigure", "", [])
+        for e in effects:
+            bus.call_blocking("org.kde.KWin", "/Effects", "org.kde.kwin.Effects", "reconfigureEffect", "s", [e])
         names = dbus.Interface(bus.get_object("org.kde.KWin", "/org/kde/KWin/InputDevice"),
                                "org.freedesktop.DBus.Properties").Get(
             "org.kde.KWin.InputDeviceManager", "devicesSysNames")
@@ -465,6 +512,146 @@ def apply_settings(lines, state, log):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     json.dump(old, open(path, "w"))
     apply_monitors([json.loads(l[8:]) for l in lines if l.startswith("monitor ")], log)
+
+
+# Window rules: Hyprland's match and what it sets, as KWin rules. Placement
+# (where, how big, which workspace, states) applies when the window opens;
+# looks and focus always.
+MATCH = {"class": "wmclass", "initial_class": "wmclass", "title": "title", "initial_title": "title"}
+APPLY, FORCE, REGEX = 3, 2, 3
+NORMAL_AND_DIALOG = 1 | 32
+
+
+def pair(v, sep=" "):
+    """'800 600', {800, 600} or {w=800, h=600} -> (800, 600), or None."""
+    if isinstance(v, dict):
+        v = [v.get(k) for k in ("x", "y")] if "x" in v else [v.get(k) for k in ("w", "h")] if "w" in v else list(v.values())
+    if isinstance(v, str):
+        v = v.replace(",", " ").split()
+    try:
+        a, b = (int(float(x)) for x in v)
+        return a, b
+    except (TypeError, ValueError):
+        return None
+
+
+def rule_body(r, desktops, log):
+    """kwinrulesrc lines of one Hyprland rule, or None when KWin cannot match it."""
+    name = r.get("name") or "rule"
+    match = r.get("match") or {}
+    if not isinstance(match, dict):
+        match = {}
+    other = [k for k in match if k not in MATCH]
+    if other:
+        print("mmsimpulse-shortcuts: window rule %r matches on %s, which KWin rules cannot; left out" %
+              (name, ", ".join(other)), file=log)
+        return None
+    body = ["Description=mmsimpulse: %s" % name]
+    for k, v in match.items():
+        body += ["%s=%s" % (MATCH[k], v), "%smatch=%d" % (MATCH[k], REGEX)]
+        if MATCH[k] == "wmclass":
+            body.append("wmclasscomplete=false")
+    if not match:
+        body.append("types=%d" % NORMAL_AND_DIALOG)
+    sets, skipped = [], []
+    for k, v in r.items():
+        if k in ("name", "match", "float"):
+            continue  # every window floats here
+        if k == "workspace":
+            n = str(v).split()[0] if str(v).split() else ""
+            if n.isdigit() and 0 < int(n) <= len(desktops):
+                sets += ["desktops=%s" % desktops[int(n) - 1], "desktopsrule=%d" % APPLY]
+            else:
+                skipped.append(k)
+        elif k == "pin" and v:
+            sets += ["desktops=", "desktopsrule=%d" % APPLY]
+        elif k in ("move", "size") and pair(v):
+            sets += ["%s=%d,%d" % ((("position" if k == "move" else "size"),) + pair(v)),
+                     "%srule=%d" % ("position" if k == "move" else "size", APPLY)]
+        elif k == "center" and v:
+            sets += ["placement=5", "placementrule=%d" % FORCE]
+        elif k == "opacity":
+            parts = str(v).split()
+            try:
+                a = float(parts[0])
+                i = float(parts[1]) if len(parts) > 1 else a
+                sets += ["opacityactive=%d" % round(a * 100), "opacityactiverule=%d" % FORCE,
+                         "opacityinactive=%d" % round(i * 100), "opacityinactiverule=%d" % FORCE]
+            except (ValueError, IndexError):
+                skipped.append(k)
+        elif k == "no_focus" and v:
+            sets += ["acceptfocus=false", "acceptfocusrule=%d" % FORCE]
+        elif k == "fullscreen" and v:
+            sets += ["fullscreen=true", "fullscreenrule=%d" % APPLY]
+        elif k == "maximize" and v:
+            sets += ["maximizehoriz=true", "maximizehorizrule=%d" % APPLY,
+                     "maximizevert=true", "maximizevertrule=%d" % APPLY]
+        elif k == "no_screen_share" and v:
+            sets += ["excludefromcapture=true", "excludefromcapturerule=%d" % FORCE]
+        elif (k == "decorate" and not v) or (k == "border_size" and str(v) == "0"):
+            sets += ["noborder=true", "noborderrule=%d" % FORCE]
+        elif k == "above" and v:
+            sets += ["above=true", "aboverule=%d" % APPLY]
+        else:
+            skipped.append(k)
+    if skipped:
+        print("mmsimpulse-shortcuts: window rule %r: %s has no KWin counterpart; left out" %
+              (name, ", ".join(skipped)), file=log)
+    return body + sets if sets else None
+
+
+def apply_rules(rules, sets, bus, log):
+    """Write mmsimpulse's rules into kwinrulesrc next to the user's own. True if it changed."""
+    conf = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    path = os.path.join(conf, "kwinrulesrc")
+    try:
+        desktops = [str(d[1]) for d in sorted(bus.get_object("org.kde.KWin", "/VirtualDesktopManager").Get(
+            "org.kde.KWin.VirtualDesktopManager", "desktops", dbus_interface="org.freedesktop.DBus.Properties"))]
+    except Exception:
+        desktops = []
+    # KWin takes each property from the first rule that sets it, Hyprland
+    # from the last: the rules go in backwards, and the opacity for every
+    # window, the least specific, last.
+    rules = list(reversed(rules))
+    ops = [sets.get("decoration.active_opacity"), sets.get("decoration.inactive_opacity")]
+    if any(o is not None and float(o) != 1.0 for o in ops):
+        a, i = (1.0 if o is None else float(o) for o in ops)
+        rules.append({"name": "decoration opacity", "opacity": "%g %g" % (a, i)})
+    ours = [b for b in (rule_body(r, desktops, log) for r in rules) if b]
+    groups, order, cur = {}, [], None
+    old = open(path).read() if os.path.exists(path) else ""
+    for line in old.splitlines():
+        if line.startswith("[") and line.endswith("]"):
+            cur = line[1:-1]
+            groups[cur] = []
+            order.append(cur)
+        elif cur is not None and line.strip():
+            groups[cur].append(line)
+    # KWin 6.8 keeps the order as Order=; older files have rules= and count=,
+    # which KWin turns into Order= itself.
+    general = dict(l.split("=", 1) for l in groups.get("General", []) if "=" in l)
+    listed = general.pop("Order", None) or general.pop("rules", "")
+    general.pop("rules", None)
+    general.pop("count", None)
+    theirs = [g for g in listed.split(",") if g and not g.startswith("mmsimpulse-")]
+    names = ["mmsimpulse-%d" % (n + 1) for n in range(len(ours))]
+    general["Order"] = ",".join(theirs + names)
+    out = ["[General]"] + ["%s=%s" % kv for kv in general.items()]
+    for g in order:
+        if g != "General" and not g.startswith("mmsimpulse-"):
+            out += ["", "[%s]" % g] + groups[g]
+    for g, body in zip(names, ours):
+        out += ["", "[%s]" % g] + body
+    text = "\n".join(out) + "\n"
+    if not theirs and not names:
+        if not old:
+            return False
+        text = ""
+    if text == old:
+        return False
+    with open(path, "w") as f:
+        f.write(text)
+    return True
 
 
 def apply_monitors(monitors, log):
@@ -559,6 +746,25 @@ def watched(paths):
     return sig
 
 
+class Once:
+    """A log that says each line once: every save reads the whole config again."""
+
+    def __init__(self, out):
+        self.out, self.seen, self.part = out, set(), ""
+
+    def write(self, text):
+        self.part += text
+        while "\n" in self.part:
+            line, self.part = self.part.split("\n", 1)
+            if line not in self.seen:
+                self.seen.add(line)
+                self.out.write(line + "\n")
+                self.out.flush()
+
+    def flush(self):
+        pass
+
+
 def notify(text):
     """Say so on screen, as Hyprland's error bar does."""
     try:
@@ -602,9 +808,11 @@ def watch(kwin, source, rc, appdir, state, profile, config):
         except Exception:
             return None
 
+    log = Once(sys.stderr)
+
     def settings(lines):
         try:
-            apply_settings(lines, state, sys.stderr)
+            apply_settings(lines, state, log)
         except Exception as exc:
             print("mmsimpulse-shortcuts: %s" % exc, file=sys.stderr)
 
@@ -640,7 +848,7 @@ def watch(kwin, source, rc, appdir, state, profile, config):
         try:
             done = apply(rc, appdir, state, profile, config, current, name_of)
             if done:
-                push(*done, config, sys.stderr)
+                push(*done, config, log)
         except Exception as exc:  # the session lives on; the next save tries again
             print("mmsimpulse-shortcuts: %s" % exc, file=sys.stderr)
         settings(current)
