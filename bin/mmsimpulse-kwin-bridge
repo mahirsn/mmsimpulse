@@ -644,8 +644,9 @@ class NiriIpc:
 HYPR_VERSION = "0.55.0"
 
 
-def hypr_addr(wid):
-    return "0x%x" % (0x5d0000 + wid)
+def hypr_addr(uuid):
+    """The first 48 bits of KWin's window id, as hyprland-toplevel-mapping gives them."""
+    return "0x%x" % int(normalize_uuid(uuid).strip("{}").replace("-", "")[:12], 16)
 
 
 def hypr_view(payload, desktops, window_ids, output_ids, stamps, modes=None):
@@ -666,7 +667,7 @@ def hypr_view(payload, desktops, window_ids, output_ids, stamps, modes=None):
         on = [by_uuid[u] for u in w.get("desktops", []) if u in by_uuid]
         n = on[0] if on else shown.get(out, 1)
         clients.append({
-            "address": hypr_addr(wid), "mapped": True, "hidden": bool(w.get("minimized")),
+            "address": hypr_addr(uuid), "mapped": True, "hidden": bool(w.get("minimized")),
             "at": [int(w.get("x", 0)), int(w.get("y", 0))], "size": [int(w.get("width", 0)), int(w.get("height", 0))],
             "workspace": {"id": n, "name": str(n)}, "floating": True, "pseudo": False,
             "monitor": output_ids.get(out, 0), "class": w.get("appId", ""), "title": w.get("title", ""),
@@ -970,6 +971,8 @@ class HyprIpc:
         raise ValueError(arg)
 
     def dispatch(self, text, v):
+        if text.startswith("hl."):
+            return self.lua_dispatch(text, v)
         name, _, args = text.partition(" ")
         b = self.bridge
         if name == "workspace":
@@ -1027,9 +1030,112 @@ class HyprIpc:
         elif name in ("togglefloating", "setfloating", "settiled", "pseudo", "centerwindow"):
             if name == "centerwindow" and v["focused"]:
                 b.WindowAction(self.uuid(v["focused"]), "center", "")
+        elif name == "global":
+            # A shell's own action (hyprland-global-shortcuts) is pressed and
+            # released by the KWin plugin; anything else by the daemon.
+            comp, _, action = args.strip().partition(":")
+            try:
+                done = b.bus.get_object("org.kde.KWin", "/MmsimpulseGlobalShortcuts").Trigger(
+                    comp, action, dbus_interface="org.mmsimpulse.GlobalShortcuts")
+            except dbus.DBusException:
+                done = False
+            if not done:
+                invoke_shortcut(b.bus, comp, action)
         else:
             return "Invalid dispatcher"
         return "ok"
+
+    def lua_dispatch(self, text, v):
+        """Hyprland's Lua spelling: hl.dsp.focus({ workspace = 2 }) and the like."""
+        m = re.fullmatch(r"hl\.(dsp\.)?([a-z_.]+)\((.*)\)\s*;?", text.strip(), re.S)
+        if not m:
+            return "Invalid dispatcher"
+        if not m.group(1):  # hl.config({...}) and other settings: KWin has its own
+            return "ok"
+        name, arg = m.group(2), lua_literal(m.group(3))
+        t = arg if isinstance(arg, dict) else {}
+        win = t.get("window", "")
+        if name == "focus" and "workspace" in t:
+            return self.dispatch("workspace %s" % t["workspace"], v)
+        if name == "focus" and "window" in t:
+            return self.dispatch("focuswindow %s" % win, v)
+        if name == "window.move" and "workspace" in t:
+            silent = "silent" if t.get("follow") is False else ""
+            return self.dispatch("movetoworkspace%s %s,%s" % (silent, t["workspace"], win), v)
+        if name == "window.close":
+            return self.dispatch("closewindow %s" % win, v)
+        if name == "window.kill":
+            return self.dispatch("closewindow %s" % win, v)
+        if name == "window.pin":
+            return self.dispatch("pin %s" % win, v)
+        if name == "window.fullscreen":
+            return self.dispatch("fullscreen %s" % (1 if t.get("mode") in (1, "maximized") else 0), v)
+        if name in ("window.float", "window.pseudo", "window.center"):
+            return self.dispatch("centerwindow" if name == "window.center" else "togglefloating", v)
+        if name == "exec_cmd":
+            return self.dispatch("exec %s" % (arg if isinstance(arg, str) else t.get("cmd", "")), v)
+        if name == "global":
+            return self.dispatch("global %s" % (arg if isinstance(arg, str) else t.get("name", "")), v)
+        if name == "exit":
+            return self.dispatch("exit", v)
+        return "Invalid dispatcher"
+
+
+def lua_literal(text):
+    """A Lua literal of a dispatcher's argument: a string, number, boolean or a
+    table of those (key = value, or a list)."""
+    text = text.strip()
+    pos = 0
+
+    def skip():
+        nonlocal pos
+        while pos < len(text) and text[pos] in " \t\n,;":
+            pos += 1
+
+    def value():
+        nonlocal pos
+        skip()
+        c = text[pos] if pos < len(text) else ""
+        if c in "\"'":
+            end = pos + 1
+            while end < len(text) and text[end] != c:
+                end += 2 if text[end] == "\\" else 1
+            out = text[pos + 1:end].encode().decode("unicode_escape")
+            pos = end + 1
+            return out
+        if c == "{":
+            pos += 1
+            table, items = {}, []
+            while True:
+                skip()
+                if pos >= len(text) or text[pos] == "}":
+                    pos += 1
+                    return table if table else items
+                key = re.match(r"(\[\s*(['\"])(.*?)\2\s*\]|[A-Za-z_][A-Za-z0-9_]*)\s*=", text[pos:])
+                if key:
+                    pos += key.end()
+                    table[key.group(3) if key.group(3) is not None else key.group(1)] = value()
+                else:
+                    items.append(value())
+        word = re.match(r"-?[0-9.]+|true|false|nil|[A-Za-z_][A-Za-z0-9_.]*", text[pos:])
+        if not word:
+            pos = len(text)
+            return None
+        pos += word.end()
+        w = word.group(0)
+        if w in ("true", "false"):
+            return w == "true"
+        if w == "nil":
+            return None
+        try:
+            return int(w)
+        except ValueError:
+            try:
+                return float(w)
+            except ValueError:
+                return w
+
+    return value() if text else None
 
 
 def invoke_shortcut(bus, component, name):

@@ -3,16 +3,19 @@
 // list (wlr-foreign-toplevel-management, ext-foreign-toplevel-list) and
 // workspaces (ext-workspace), and screenshots and window pictures (wlr-screencopy,
 // ext-image-copy-capture), typing (zwp-virtual-keyboard) and
-// display settings (wlr-output-management). With
+// display settings (wlr-output-management), and Hyprland's global shortcuts
+// (hyprland-global-shortcuts) and window addresses (hyprland-toplevel-mapping). With
 // them a Quickshell shell, waybar and the like show windows and workspaces on
 // KWin without knowing anything about it. It also keeps KWin's window
 // animations off such a shell's panels.
 
 #include "animations.h"
+#include "globalshortcuts.h"
 #include "imagecopy.h"
 #include "outputmanagement.h"
 #include "screencopy.h"
 #include "toplevellist.h"
+#include "toplevelmapping.h"
 #include "toplevels.h"
 #include "virtualkeyboard.h"
 #include "workspaces.h"
@@ -33,6 +36,8 @@ public:
         , m_outputManagement(std::make_unique<OutputManagement>())
         , m_workspaces(std::make_unique<ExtWorkspaces>())
         , m_animations(std::make_unique<LayerAnimations>())
+        , m_globalShortcuts(std::make_unique<GlobalShortcuts>())
+        , m_toplevelMapping(std::make_unique<ToplevelMapping>())
     {
     }
 
@@ -45,6 +50,8 @@ private:
     std::unique_ptr<OutputManagement> m_outputManagement;
     std::unique_ptr<ExtWorkspaces> m_workspaces;
     std::unique_ptr<LayerAnimations> m_animations;
+    std::unique_ptr<GlobalShortcuts> m_globalShortcuts;
+    std::unique_ptr<ToplevelMapping> m_toplevelMapping;
 };
 
 class MmsimpulsePluginFactory : public PluginFactory

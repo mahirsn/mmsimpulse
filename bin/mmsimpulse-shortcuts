@@ -73,6 +73,15 @@ def wanted(imported, profile):
                 else:
                     acts[name] = (left, a)
             bound[keys] = cmd
+        elif line.startswith("global ") and "=" in line and ":" in line.split("=", 1)[0]:
+            # An action a shell registered (Hyprland's global shortcuts):
+            # component:action, exactly these keys.
+            name, keys = (x.strip() for x in line[7:].split("=", 1))
+            comp, _, act = name.partition(":")
+            ks = [k for k in keys.split("\\t") if k]
+            for k in ks:
+                bound.pop(k, None)
+            acts["%s\x1f%s" % (comp, act)] = (ks, False)
         elif line.startswith(("kwin ", "kwin+ ")) and "=" in line:
             plus = line.startswith("kwin+ ")
             action, keys = (x.strip() for x in line[len("kwin+ " if plus else "kwin "):].split("=", 1))
@@ -177,10 +186,12 @@ def apply(rc, appdir, state, profile, config, imported, name_of):
             change("services][" + name, "_launch", join([k for k in held if k not in claimed], False))
 
     for action, keys, add in actions:
-        parts = split(get("kwin", action) or ",none,%s" % action)
+        comp, _, name = action.rpartition("\x1f")
+        comp = comp or "kwin"
+        parts = split(get(comp, name) or ",none,%s" % name)
         parts[0] = join(([k for k in keys_of(parts[0]) if k not in claimed] if add else []) +
                         [k for k in keys_of(keys) if not add or k not in keys_of(parts[0])])
-        change("kwin", action, ",".join(parts))
+        change(comp, name, ",".join(parts))
 
     written = set()
     for keys, cmd in binds:

@@ -171,6 +171,9 @@ def action(kind, args):
     args = args or {}
     if kind == "kwin":
         return ("kwin", str(args["name"])) if args.get("name") else None
+    if kind == "global":  # an action a shell registered, as app:id
+        name = args if isinstance(args, str) else args.get("name") or args.get("arg") or ""
+        return ("global", str(name)) if ":" in str(name) else None
     if kind.startswith("mms.") and "workspace" in kind:
         n = str(args.get("n", "")).strip()
         step = {"prev": "Left", "-1": "Left", "next": "Right", "+1": "Right"}.get(n)
@@ -322,6 +325,7 @@ mms = {
   bind = hl.bind,
   exec = function(c) return act("exec", { cmd = c }) end,
   kwin = function(name) return act("kwin", { name = name }) end,
+  global = function(name) return act("global", { name = name }) end,
   workspace = function(n) return act("mms.workspace", { n = n }) end,
   movetoworkspace = function(n) return act("mms.movetoworkspace", { n = n }) end,
   movetoworkspacesilent = function(n) return act("mms.movetoworkspacesilent", { n = n }) end,
@@ -372,7 +376,7 @@ io.write(table.concat(out, "\n"), "\n")
 if not ok then io.stderr:write(tostring(err), "\n"); os.exit(1) end
 """
 
-LUA_KINDS = {"exec": "exec", "kwin": "kwin", "mms.workspace": "mms.workspace",
+LUA_KINDS = {"exec": "exec", "kwin": "kwin", "global": "global", "mms.global": "global", "mms.workspace": "mms.workspace",
              "mms.movetoworkspace": "mms.movetoworkspace",
              "mms.movetoworkspacesilent": "mms.movetoworkspacesilent", "window.close": "close", "window.kill": "kill",
              "window.fullscreen": "fullscreen", "window.pin": "pin", "focus": "focus",
@@ -504,6 +508,7 @@ def hyprland_conf(path, seen=None, variables=None):
             mods = mods.replace("+", " ").replace("_", " ").split()
             kind, args = {
                 "exec": ("exec", {"cmd": arg}),
+                "global": ("global", {"name": arg}),
                 "killactive": ("close", {}),
                 "forcekillactive": ("kill", {}),
                 "fullscreen": ("fullscreen", {"mode": arg or 0}),
@@ -584,6 +589,8 @@ def lines(entries, marks=False):
             continue
         for d in (binds, kwin):
             d.pop(keys, None)
+        if a[0] == "global":
+            a = ("kwin", "\x1f" + a[1])
         (binds if a[0] == "bind" else kwin)[keys] = a[1]
         if a[0] == "kwin" and not (add and add[0]):
             own.add(a[1])
@@ -591,7 +598,8 @@ def lines(entries, marks=False):
     by_action = {}
     for k, name in kwin.items():
         by_action.setdefault(name, []).append(k)
-    out += ["kwin%s %s=%s" % ("+" if marks and name not in own else "", name, "\\t".join(ks))
+    out += ["global %s=%s" % (name[1:], "\\t".join(ks)) if name.startswith("\x1f") else
+            "kwin%s %s=%s" % ("+" if marks and name not in own else "", name, "\\t".join(ks))
             for name, ks in by_action.items()]
     return out
 

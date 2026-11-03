@@ -9,6 +9,7 @@ A bare KWin Wayland session to run a shell of your choice on, with Hyprland-styl
   - screenshots, recording and window pictures (grim, wf-recorder, a shell's previews): `zwlr_screencopy_manager_v1`, `ext_image_copy_capture_manager_v1` with output and window sources
   - typing (wtype, on-screen keyboards): `zwp_virtual_keyboard_manager_v1`, in the keys the current layout has
   - screens (wlr-randr, kanshi): `zwlr_output_manager_v1`
+  - Hyprland's global shortcuts and window addresses (Quickshell's `GlobalShortcut` and Hyprland module): `hyprland_global_shortcuts_manager_v1`, `hyprland_toplevel_mapping_manager_v1`. A shell's shortcut is an action of KDE's shortcut daemon, named after the shell's app id, so Hyprland's `bind = SUPER, A, global, quickshell:sidebarLeftToggle` (taken in with `mms.source`) or `mms.bind("SUPER + A", mms.global("quickshell:sidebarLeftToggle"))` binds it.
 
   As on wlroots compositors, any client may use them. Windows marked to be hidden from capture stay hidden.
 - Multi-monitor: one workspace pool across monitors with `[Windows] PerOutputVirtualDesktops=true`.
@@ -53,7 +54,7 @@ A profile's keys are the shell's defaults. Your own keys go in `~/.config/mmsimp
 
 Without a shell the session still starts, with KWin, Alt+Tab and `Meta+Return` for a terminal.
 
-A shell written for niri or Hyprland works with `mms.ipc("niri")` or `mms.ipc("hyprland")` in `mmsimpulse.lua`: mmsimpulse answers that compositor's socket from KWin's windows, workspaces and monitors, events included, for the shell and what it starts only (`NIRI_SOCKET`, `HYPRLAND_INSTANCE_SIGNATURE`). niri sees ten workspaces on every monitor; Hyprland sees workspaces 1..10, each on one monitor at a time, and `hyprctl` works when Hyprland's package is installed. Actions with no KWin counterpart, such as niri's columns or Hyprland's layouts and special workspaces, answer an error.
+A shell written for niri or Hyprland works with `mms.ipc("niri")` or `mms.ipc("hyprland")` in `mmsimpulse.lua`: mmsimpulse answers that compositor's socket from KWin's windows, workspaces and monitors, events included, for the shell and what it starts only (`NIRI_SOCKET`, `HYPRLAND_INSTANCE_SIGNATURE`). niri sees ten workspaces on every monitor; Hyprland sees workspaces 1..10, each on one monitor at a time, and `hyprctl` works when Hyprland's package is installed, and dispatchers in Hyprland's Lua spelling (`hl.dsp.focus({ workspace = 2 })`) work too. Actions with no KWin counterpart, such as niri's columns or Hyprland's layouts and special workspaces, answer an error.
 
 The lock screen stays KDE's: KWin has no `ext_session_lock_v1`.
 

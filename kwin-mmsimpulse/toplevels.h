@@ -4,6 +4,7 @@
 #include <QObject>
 
 struct wl_client;
+struct wl_resource;
 struct wl_global;
 
 namespace KWin
@@ -25,6 +26,9 @@ public:
     void update(KWin::Window *window);
     void updateAll();
     void forget(Manager *manager);
+
+    // The window behind one of our zwlr_foreign_toplevel_handle_v1, or null.
+    static KWin::Window *window(wl_resource *handle);
 
 private:
     static void bind(wl_client *client, void *data, uint32_t version, uint32_t id);

@@ -12,7 +12,7 @@ include(KDECompilerSettings NO_POLICY_SCOPE)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 find_package(Qt6 REQUIRED COMPONENTS Core DBus Gui Quick Widgets)
-find_package(KF6 REQUIRED COMPONENTS CoreAddons)
+find_package(KF6 REQUIRED COMPONENTS CoreAddons GlobalAccel)
 find_package(KWin REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_get_variable(WAYLAND_PROTOCOLS wayland-protocols pkgdatadir)
@@ -28,7 +28,10 @@ set(PROTOCOLS
     ${WAYLAND_PROTOCOLS}/staging/ext-image-capture-source/ext-image-capture-source-v1.xml
     ${WAYLAND_PROTOCOLS}/staging/ext-image-copy-capture/ext-image-copy-capture-v1.xml
     # wlroots' own; no distribution package installs it.
-    ${CMAKE_CURRENT_SOURCE_DIR}/protocols/virtual-keyboard-unstable-v1.xml)
+    ${CMAKE_CURRENT_SOURCE_DIR}/protocols/virtual-keyboard-unstable-v1.xml
+    # Hyprland's; Hyprland's protocol package is not a dependency.
+    ${CMAKE_CURRENT_SOURCE_DIR}/protocols/hyprland-global-shortcuts-v1.xml
+    ${CMAKE_CURRENT_SOURCE_DIR}/protocols/hyprland-toplevel-mapping-v1.xml)
 set(PROTOCOL_SOURCES)
 foreach(xml ${PROTOCOLS})
     get_filename_component(name ${xml} NAME_WE)
@@ -41,8 +44,8 @@ foreach(xml ${PROTOCOLS})
 endforeach()
 
 kcoreaddons_add_plugin(kwin-mmsimpulse
-    SOURCES main.cpp animations.cpp capture.cpp imagecopy.cpp outputmanagement.cpp virtualkeyboard.cpp toplevels.cpp toplevellist.cpp screencopy.cpp workspaces.cpp ${PROTOCOL_SOURCES}
+    SOURCES main.cpp animations.cpp capture.cpp globalshortcuts.cpp toplevelmapping.cpp imagecopy.cpp outputmanagement.cpp virtualkeyboard.cpp toplevels.cpp toplevellist.cpp screencopy.cpp workspaces.cpp ${PROTOCOL_SOURCES}
     INSTALL_NAMESPACE "kwin/plugins")
 target_include_directories(kwin-mmsimpulse PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 pkg_check_modules(XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
-target_link_libraries(kwin-mmsimpulse KWin::kwin PkgConfig::XKBCOMMON)
+target_link_libraries(kwin-mmsimpulse KWin::kwin KF6::GlobalAccel PkgConfig::XKBCOMMON)

@@ -154,6 +154,13 @@ static void managerDestroyed(wl_resource *resource)
     release(m);
 }
 
+Window *ForeignToplevels::window(wl_resource *handle)
+{
+    if (!handle || !wl_resource_instance_of(handle, &zwlr_foreign_toplevel_handle_v1_interface, &s_handleImpl))
+        return nullptr;
+    return windowOf(handle);
+}
+
 ForeignToplevels::ForeignToplevels()
 {
     m_global = wl_global_create(*waylandServer()->display(), &zwlr_foreign_toplevel_manager_v1_interface,

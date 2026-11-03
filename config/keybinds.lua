@@ -10,6 +10,8 @@
 --                                   the monitor under the mouse
 --   mms.movetoworkspace(n)          send the window there and follow it
 --   mms.movetoworkspacesilent(n)    send the window there (or "prev", "next")
+--   mms.global("app:name")          an action a shell registered (Quickshell's
+--                                   GlobalShortcut; Hyprland's `global` binds)
 --
 -- hl.bind(keys, hl.dsp.exec_cmd(...)) and the other hl.dsp actions work too.
 -- A key bound here wins over the shell's profile and takes the key from
