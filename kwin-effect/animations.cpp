@@ -12,15 +12,20 @@
     (0,0), (x1,y1), (x2,y2), (1,1); the style is Hyprland's, and what it does
     to a window follows Hyprland's animation controllers. Opening and closing
     windows are claimed from KWin's own effects (Scale, Fade, Glide) the way
-    effects hand an animation to one another.
+    effects hand an animation to one another. Switching workspaces plays
+    Hyprland's workspacesIn and workspacesOut on the monitor that switched, in
+    place of KWin's Slide, which mmsimpulse-shortcuts turns off meanwhile.
 
     SPDX-License-Identifier: GPL-2.0-or-later
 */
 
 #include "core/output.h"
+#include "core/renderviewport.h"
 #include "effect/animationeffect.h"
 #include "effect/effecthandler.h"
 #include "effect/effectwindow.h"
+#include "effect/timeline.h"
+#include "virtualdesktops.h"
 #include "window.h"
 
 #include <KConfigGroup>
@@ -30,6 +35,7 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <map>
 
 namespace KWin
 {
@@ -51,6 +57,78 @@ public:
         connect(effects, &EffectsHandler::windowDeleted, this, [this](EffectWindow *w) {
             m_running.remove(w);
         });
+        connect(effects, &EffectsHandler::desktopChanged, this, &HyprAnimationsEffect::switchWorkspace);
+        connect(effects, &EffectsHandler::screenRemoved, this, [this](LogicalOutput *screen) {
+            m_switches.erase(screen);
+            finishSwitches();
+        });
+    }
+
+    ~HyprAnimationsEffect() override
+    {
+        m_switches.clear();
+        finishSwitches();
+    }
+
+    bool isActive() const override
+    {
+        return !m_switches.empty() || AnimationEffect::isActive();
+    }
+
+    void prePaintScreen(ScreenPrePaintData &data) override
+    {
+        if (auto it = m_switches.find(data.screen); it != m_switches.end()) {
+            it->second.in.advance(data.view);
+            it->second.out.advance(data.view);
+            data.mask |= PAINT_SCREEN_TRANSFORMED;
+        }
+        AnimationEffect::prePaintScreen(data);
+    }
+
+    void prePaintWindow(RenderView *view, EffectWindow *w, WindowPrePaintData &data) override
+    {
+        if (m_switches.contains(w->screen())) {
+            data.setTransformed();
+            data.setTranslucent(); // a fading workspace
+        }
+        AnimationEffect::prePaintWindow(view, w, data);
+    }
+
+    bool paintWindow(const RenderTarget &renderTarget, const RenderViewport &viewport, EffectWindow *w, int mask,
+                     const Region &deviceRegion, WindowPaintData &data) override
+    {
+        auto it = m_switches.find(w->screen());
+        if (it == m_switches.end() || w->isOnAllDesktops() || w == it->second.with) {
+            return AnimationEffect::paintWindow(renderTarget, viewport, w, mask, deviceRegion, data);
+        }
+        const Switch &s = it->second;
+        const bool in = w->isOnDesktop(s.to);
+        if (!in && !w->isOnDesktop(s.from)) {
+            return AnimationEffect::paintWindow(renderTarget, viewport, w, mask, deviceRegion, data);
+        }
+        // Workspace::startAnimation: the new one comes in from its offset to
+        // nothing, the old one goes from nothing to its offset.
+        const qreal t = in ? s.in.value() : s.out.value();
+        data += (in ? s.inOffset : s.outOffset) * (in ? 1 - t : t);
+        // Nothing of it on the monitor next to this one.
+        const Region onScreen = deviceRegion.intersected(viewport.mapToDeviceCoordinatesAligned(s.screen->geometry()));
+        return AnimationEffect::paintWindow(renderTarget, viewport, w, mask, onScreen, data);
+    }
+
+    void postPaintScreen() override
+    {
+        for (auto it = m_switches.begin(); it != m_switches.end();) {
+            if (it->second.in.done() && it->second.out.done()) {
+                it = m_switches.erase(it);
+            } else {
+                effects->addRepaint(it->second.screen->geometry());
+                ++it;
+            }
+        }
+        if (m_switches.empty()) {
+            finishSwitches();
+        }
+        AnimationEffect::postPaintScreen();
     }
 
     static bool supported()
@@ -66,6 +144,7 @@ public:
         m_layers = {leaf(g, "LayersOut"), leaf(g, "LayersIn")};
         m_fadeLayers = {leaf(g, "FadeLayersOut"), leaf(g, "FadeLayersIn")};
         m_layerOn = g.readEntry("Layers", false);
+        m_workspaces = {leaf(g, "WorkspacesOut"), leaf(g, "WorkspacesIn")};
     }
 
 private:
@@ -252,7 +331,109 @@ private:
         return 0;
     }
 
-    std::array<Leaf, 2> m_windows, m_fade, m_layers, m_fadeLayers; // [closing, opening]
+    struct Switch
+    {
+        LogicalOutput *screen = nullptr;
+        VirtualDesktop *from = nullptr;
+        VirtualDesktop *to = nullptr;
+        EffectWindow *with = nullptr;
+        TimeLine in, out;
+        QPointF inOffset, outOffset;
+        bool inFade = false, outFade = false;
+        QList<EffectWindowVisibleRef> visible;
+    };
+
+    // Workspace::startAnimation for one side: where the workspace is when it
+    // is off screen, and whether it fades.
+    static void workspaceStyle(const QString &style, bool left, const RectF &mon, QPointF *offset, bool *fade, bool in)
+    {
+        const QStringList args = style.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+        bool vert = style.startsWith(QLatin1String("slidevert")) || style.startsWith(QLatin1String("slidefadevert"));
+        if (args.size() > 1) {
+            const QString a = args[1];
+            if (a == QLatin1String("top") || a == QLatin1String("bottom")) {
+                left = a == QLatin1String("bottom");
+                vert = true;
+            } else if (a == QLatin1String("left") || a == QLatin1String("right")) {
+                left = a == QLatin1String("right");
+                vert = false;
+            }
+        }
+        qreal perc = 1.0;
+        if (!args.isEmpty() && args.last().endsWith(QLatin1Char('%'))) {
+            perc = args.last().chopped(1).toInt() / 100.0;
+        }
+        // general:gaps_workspaces is Hyprland's 0.
+        const qreal d = (vert ? mon.height() : mon.width()) * perc;
+        const qreal sign = (left ? 1 : -1) * (in ? 1 : -1);
+        *fade = style.startsWith(QLatin1String("slidefade")) || style == QLatin1String("fade");
+        *offset = style == QLatin1String("fade") ? QPointF() : vert ? QPointF(0, sign * d) : QPointF(sign * d, 0);
+    }
+
+    void switchWorkspace(VirtualDesktop *from, VirtualDesktop *to, EffectWindow *with, LogicalOutput *screen)
+    {
+        if (!screen || !from || !to || from == to
+            || (effects->hasActiveFullScreenEffect() && effects->activeFullScreenEffect() != this)) {
+            return;
+        }
+        const Leaf &in = m_workspaces[1], &out = m_workspaces[0];
+        if (!in.on && !out.on) {
+            return;
+        }
+        // ponytail: a switch while one plays starts over from the old
+        // workspace in place; Hyprland carries the moving one on.
+        Switch &s = m_switches[screen];
+        s = Switch();
+        s.screen = screen;
+        s.from = from;
+        s.to = to;
+        s.with = with;
+        // Monitor::changeWorkspace: a higher number comes from the right.
+        const bool left = to->x11DesktopNumber() > from->x11DesktopNumber();
+        const RectF mon = screen->geometryF();
+        workspaceStyle(in.style, left, mon, &s.inOffset, &s.inFade, true);
+        workspaceStyle(out.style, left, mon, &s.outOffset, &s.outFade, false);
+        for (TimeLine *line : {&s.in, &s.out}) {
+            const Leaf &l = line == &s.in ? in : out;
+            line->setDuration(l.on ? animationTime(std::chrono::milliseconds(l.ms)) : std::chrono::milliseconds(1));
+            line->setEasingCurve(l.curve);
+        }
+        for (quint64 id : std::as_const(m_fading)) {
+            cancel(id);
+        }
+        m_fading.clear();
+        const auto windows = effects->stackingOrder();
+        for (EffectWindow *w : windows) {
+            if (w->screen() != screen || w->isOnAllDesktops() || w == with) {
+                continue;
+            }
+            const bool isIn = w->isOnDesktop(to);
+            if (!isIn && !w->isOnDesktop(from)) {
+                continue;
+            }
+            if (!isIn) {
+                s.visible << EffectWindowVisibleRef(w, EffectWindow::PAINT_DISABLED_BY_DESKTOP);
+            }
+            // The fade as a window animation, as KWin's Fade Desktop does.
+            if (isIn ? s.inFade : s.outFade) {
+                m_fading << animate(w, Opacity, 0, isIn ? s.in.duration() : s.out.duration(), FPx2(isIn ? 1.0 : 0.0),
+                                    (isIn ? in : out).curve, 0, FPx2(isIn ? 0.0 : 1.0), false, false);
+            }
+        }
+        effects->setActiveFullScreenEffect(this);
+        effects->addRepaint(screen->geometry());
+    }
+
+    void finishSwitches()
+    {
+        if (effects->activeFullScreenEffect() == this) {
+            effects->setActiveFullScreenEffect(nullptr);
+        }
+    }
+
+    std::array<Leaf, 2> m_windows, m_fade, m_layers, m_fadeLayers, m_workspaces; // [closing, opening]
+    std::map<LogicalOutput *, Switch> m_switches;
+    QList<quint64> m_fading;
     bool m_layerOn = false;
     QHash<EffectWindow *, QList<quint64>> m_running;
 };

@@ -385,17 +385,19 @@ FILE_KEYS = {
 }
 # Read elsewhere: the window rules, and the pointing devices below.
 RULE_KEYS = {"decoration.active_opacity", "decoration.inactive_opacity"}
-# Hyprland's animation tree, the part KWin windows and layers have: a leaf
+# Hyprland's animation tree, the part KWin windows, layers and workspaces have: a leaf
 # without its own hl.animation takes its parent's, and global defaults to
 # Hyprland's own (on, speed 8, the default curve).
 ANIMATIONS = "mmsimpulse_animations"
 ANIM_PARENT = {"windows": "global", "windowsIn": "windows", "windowsOut": "windows",
                "layers": "global", "layersIn": "layers", "layersOut": "layers",
                "fade": "global", "fadeIn": "fade", "fadeOut": "fade", "fadeLayers": "fade",
-               "fadeLayersIn": "fadeLayers", "fadeLayersOut": "fadeLayers"}
+               "fadeLayersIn": "fadeLayers", "fadeLayersOut": "fadeLayers",
+               "workspaces": "global", "workspacesIn": "workspaces", "workspacesOut": "workspaces"}
 ANIM_KEYS = {"windowsIn": "WindowsIn", "windowsOut": "WindowsOut", "fadeIn": "FadeIn", "fadeOut": "FadeOut",
              "layersIn": "LayersIn", "layersOut": "LayersOut",
-             "fadeLayersIn": "FadeLayersIn", "fadeLayersOut": "FadeLayersOut"}
+             "fadeLayersIn": "FadeLayersIn", "fadeLayersOut": "FadeLayersOut",
+             "workspacesIn": "WorkspacesIn", "workspacesOut": "WorkspacesOut"}
 # Shell panels stay the shell's to animate unless the config names layers.
 ANIM_LAYERS = {"layers", "layersIn", "layersOut", "fadeLayers", "fadeLayersIn", "fadeLayersOut"}
 
@@ -419,7 +421,8 @@ def animation_keys(sets, log):
         if name != "global" and name not in ANIM_PARENT:
             print("mmsimpulse-shortcuts: animation.%s is not animated on KWin; left out" % name, file=log)
     group = "kwinrc\x1fEffect-" + ANIMATIONS + "\x1f"
-    want = {"kwinrc\x1fPlugins\x1f%sEnabled" % ANIMATIONS: "true",
+    # The effect switches workspaces in place of KWin's Slide.
+    want = {"kwinrc\x1fPlugins\x1f%sEnabled" % ANIMATIONS: "true", "kwinrc\x1fPlugins\x1fslideEnabled": "false",
             group + "Layers": "true" if ANIM_LAYERS & set(nodes) else "false"}
     for leaf, key in ANIM_KEYS.items():
         node = leaf

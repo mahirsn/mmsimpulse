@@ -21,12 +21,17 @@
 -- mms.animation({ leaf = "windowsOut", enabled = true, speed = 3, bezier = "snappy", style = "slide" })
 -- mms.animation({ leaf = "fade", enabled = true, speed = 3, bezier = "snappy" })
 -- mms.animation({ leaf = "layers", enabled = true, speed = 3, bezier = "snappy", style = "fade" })
+-- mms.animation({ leaf = "workspaces", enabled = true, speed = 3, bezier = "snappy", style = "slidefadevert 20%" })
 --
 -- Leaves KWin has:
 --   global
 --     windows      windowsIn, windowsOut   style: popin [N%], slide [top|bottom|left|right], gnomed
 --     layers       layersIn, layersOut     style: fade, popin [N%], slide [top|bottom|left|right]
 --     fade         fadeIn, fadeOut (windows), fadeLayers (fadeLayersIn, fadeLayersOut)
+--     workspaces   workspacesIn, workspacesOut  style: slide, slidevert, fade, slidefade [N%],
+--                  slidefadevert [N%], slide top|bottom|left|right [N%]
 -- A shell's panels (layers) are animated only when a layers or fadeLayers
--- line is here; otherwise they stay the shell's. Workspace switching, window
--- moves and borders are not animated yet; the log names those lines.
+-- line is here; otherwise they stay the shell's. Workspace switching is this
+-- effect's in place of KWin's Slide while any line is here. Window moves,
+-- borders and special workspaces are not animated yet; the log names those
+-- lines.
