@@ -7,5 +7,26 @@
 --   },
 -- })
 --
--- Hyprland's hl.animation and hl.curve (per animation styles and bezier
--- curves) are not applied yet; the log names them.
+-- Hyprland's animations, as in Hyprland (hl.curve and hl.animation work too).
+-- With none of these lines KWin's own animations stay.
+--
+-- A curve is a bezier from (0,0) to (1,1) through two points:
+-- mms.curve("snappy", { type = "bezier", points = { { 0.05, 0.7 }, { 0.1, 1 } } })
+-- ("default" and "linear" are there already)
+--
+-- An animation sets a leaf of Hyprland's tree; a leaf without its own line
+-- takes its parent's. speed is in tenths of a second (3 = 300 ms).
+-- mms.animation({ leaf = "global", enabled = true, speed = 8, bezier = "default" })
+-- mms.animation({ leaf = "windowsIn", enabled = true, speed = 3, bezier = "snappy", style = "popin 80%" })
+-- mms.animation({ leaf = "windowsOut", enabled = true, speed = 3, bezier = "snappy", style = "slide" })
+-- mms.animation({ leaf = "fade", enabled = true, speed = 3, bezier = "snappy" })
+-- mms.animation({ leaf = "layers", enabled = true, speed = 3, bezier = "snappy", style = "fade" })
+--
+-- Leaves KWin has:
+--   global
+--     windows      windowsIn, windowsOut   style: popin [N%], slide [top|bottom|left|right], gnomed
+--     layers       layersIn, layersOut     style: fade, popin [N%], slide [top|bottom|left|right]
+--     fade         fadeIn, fadeOut (windows), fadeLayers (fadeLayersIn, fadeLayersOut)
+-- A shell's panels (layers) are animated only when a layers or fadeLayers
+-- line is here; otherwise they stay the shell's. Workspace switching, window
+-- moves and borders are not animated yet; the log names those lines.

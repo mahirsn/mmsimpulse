@@ -73,17 +73,19 @@ mms.exec_once("kdeconnectd")
 mms.env("XCURSOR_SIZE", "24")
 mms.config({ decoration = { rounding = 12, inactive_opacity = 0.9, dim_inactive = true } })
 mms.window_rule({ match = { class = "^spotify$" }, workspace = "9" })
+mms.curve("snappy", { type = "bezier", points = { { 0.05, 0.7 }, { 0.1, 1 } } })
+mms.animation({ leaf = "windowsIn", enabled = true, speed = 3, bezier = "snappy", style = "popin 80%" })
 mms.shell("dux")                                          -- instead of ~/.config/mmsimpulse/shell
 ```
 
-`hl.*` works too (`hl.bind`, `hl.config`, `hl.monitor`, `hl.env`, `hl.on("hyprland.start", ...)`), so Hyprland Lua files can be copied in, or taken in where they are:
+`hl.*` works too (`hl.bind`, `hl.config`, `hl.monitor`, `hl.env`, `hl.window_rule`, `hl.curve`, `hl.animation`, `hl.on("hyprland.start", ...)`), so Hyprland Lua files can be copied in, or taken in where they are:
 
 ```lua
 mms.source("~/.config/hypr/keybinds.lua")                                   -- one file, all of it
 mms.source("~/.config/hypr/hyprland.lua", { "binds", "input", "monitors" })  -- a whole config, these parts
 ```
 
-The parts are `binds`, `input`, `monitors`, `autostart`, `env`, `general`, `decoration`, `rules`, `animations` and `misc`; a `hyprland.conf` or niri `config.kdl` gives its binds. Settings go into KWin's own configuration (kxkbrc, kcminputrc, kwinrc, kdeglobals, kwinrulesrc, kscreen), so System Settings shows them and your own KWin window rules stay; what has no KWin counterpart is named in `~/.local/share/mmsimpulse.log`. The installer adds the `mms.source` lines, commented out, for the Hyprland or niri config it finds. Without `mmsimpulse.lua` the session takes the Hyprland or niri config's keys on its own, as before.
+The parts are `binds`, `input`, `monitors`, `autostart`, `env`, `general`, `decoration`, `rules`, `animations` and `misc`; a `hyprland.conf` or niri `config.kdl` gives its binds. Settings go into KWin's own configuration (kxkbrc, kcminputrc, kwinrc, kdeglobals, kwinrulesrc, kscreen), so System Settings shows them and your own KWin window rules stay; Hyprland's window and layer animations (curves, speeds, the popin, slide, gnomed and fade styles) are played by mmsimpulse's own KWin effect, which takes over from KWin's open and close animations only while the config has them. What has no KWin counterpart, such as workspace and border animations for now, is named in `~/.local/share/mmsimpulse.log`. The installer adds the `mms.source` lines, commented out, for the Hyprland or niri config it finds. Without `mmsimpulse.lua` the session takes the Hyprland or niri config's keys on its own, as before.
 
 ## Keys
 

@@ -385,6 +385,62 @@ FILE_KEYS = {
 }
 # Read elsewhere: the window rules, and the pointing devices below.
 RULE_KEYS = {"decoration.active_opacity", "decoration.inactive_opacity"}
+# Hyprland's animation tree, the part KWin windows and layers have: a leaf
+# without its own hl.animation takes its parent's, and global defaults to
+# Hyprland's own (on, speed 8, the default curve).
+ANIMATIONS = "mmsimpulse_animations"
+ANIM_PARENT = {"windows": "global", "windowsIn": "windows", "windowsOut": "windows",
+               "layers": "global", "layersIn": "layers", "layersOut": "layers",
+               "fade": "global", "fadeIn": "fade", "fadeOut": "fade", "fadeLayers": "fade",
+               "fadeLayersIn": "fadeLayers", "fadeLayersOut": "fadeLayers"}
+ANIM_KEYS = {"windowsIn": "WindowsIn", "windowsOut": "WindowsOut", "fadeIn": "FadeIn", "fadeOut": "FadeOut",
+             "layersIn": "LayersIn", "layersOut": "LayersOut",
+             "fadeLayersIn": "FadeLayersIn", "fadeLayersOut": "FadeLayersOut"}
+# Shell panels stay the shell's to animate unless the config names layers.
+ANIM_LAYERS = {"layers", "layersIn", "layersOut", "fadeLayers", "fadeLayersIn", "fadeLayersOut"}
+
+
+def animation_keys(sets, log):
+    """kwinrc values that turn on and set mmsimpulse's animation effect."""
+    nodes = {k[10:]: v for k, v in sets.items() if k.startswith("animation.") and isinstance(v, dict)}
+    if not nodes:
+        return {}
+    curves = {"default": [0, 0.75, 0.15, 1], "linear": [0, 0, 1, 1]}
+    for key, value in sets.items():
+        if not key.startswith("curve."):
+            continue
+        try:
+            (x1, y1), (x2, y2) = value["points"]
+            curves[key[6:]] = [float(x1), float(y1), float(x2), float(y2)]
+        except (TypeError, KeyError, ValueError):
+            print("mmsimpulse-shortcuts: %s is not a bezier curve (springs are not animated); "
+                  "the default curve is used" % key, file=log)
+    for name in nodes:
+        if name != "global" and name not in ANIM_PARENT:
+            print("mmsimpulse-shortcuts: animation.%s is not animated on KWin; left out" % name, file=log)
+    group = "kwinrc\x1fEffect-" + ANIMATIONS + "\x1f"
+    want = {"kwinrc\x1fPlugins\x1f%sEnabled" % ANIMATIONS: "true",
+            group + "Layers": "true" if ANIM_LAYERS & set(nodes) else "false"}
+    for leaf, key in ANIM_KEYS.items():
+        node = leaf
+        while node not in nodes and node != "global":
+            node = ANIM_PARENT[node]
+        t = nodes.get(node, {})
+        on = BOOL(t.get("enabled", True)) == "true"
+        curve = curves.get(t.get("bezier", "default")) if on else curves["default"]
+        if curve is None:
+            print("mmsimpulse-shortcuts: animation.%s: no curve %r; the default curve is used"
+                  % (node, t.get("bezier")), file=log)
+            curve = curves["default"]
+        try:
+            speed = float(t.get("speed", 8)) if on else 1.0
+        except (TypeError, ValueError):
+            speed = 8.0
+        style = str(t.get("style", "")) if on else ""
+        want[group + key] = " ".join(["1" if on else "0"] + ["%g" % x for x in [speed] + curve] + [style]).strip()
+    return want
+
+
 # input.<key> of each pointing device, through KWin's InputDevice objects:
 # (property, D-Bus type, value, property that says the device has it,
 #  property with the device's own default).
@@ -451,8 +507,10 @@ def apply_settings(lines, state, log):
                 want["\x1f".join((f, g, k))] = v
             if effect:
                 effects.add(effect)
-        elif key not in RULE_KEYS and not (section == "input" and name.split(".")[-1] in DEVICE_KEYS):
+        elif key not in RULE_KEYS and section not in ("animation", "curve") \
+                and not (section == "input" and name.split(".")[-1] in DEVICE_KEYS):
             print("mmsimpulse-shortcuts: %s has no KWin counterpart; left out" % key, file=log)
+    want.update(animation_keys(sets, log))
     if any(k.startswith("kxkbrc") for k in want):
         want.setdefault("kxkbrc\x1fLayout\x1fUse", "true")
         if "kxkbrc\x1fLayout\x1fOptions" in want:
@@ -463,7 +521,7 @@ def apply_settings(lines, state, log):
         if fk not in want:
             kconfig(*fk.split("\x1f"), files.pop(fk))
             reconfigure |= fk.startswith("kwinrc")
-            effects.add(reloads.get(fk))
+            effects.add(ANIMATIONS if ANIMATIONS in fk else reloads.get(fk))
     for fk, value in want.items():
         f, g, k = fk.split("\x1f")
         if fk not in files:
@@ -471,6 +529,8 @@ def apply_settings(lines, state, log):
         if kread(f, g, k) != value:
             kconfig(f, g, k, value)
             reconfigure |= f == "kwinrc"
+            if ANIMATIONS in fk:
+                effects.add(ANIMATIONS)
     effects.discard(None)
 
     # Pointing devices: touchpad.<key> for touchpads, <key> for every one.

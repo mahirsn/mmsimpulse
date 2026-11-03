@@ -228,6 +228,10 @@ local function enc(v)
   if t == "number" or t == "boolean" then return tostring(v) end
   if t == "table" then
     local parts = {}
+    if #v > 0 and next(v, #v) == nil then  -- a list, as hl.curve's points
+      for _, x in ipairs(v) do parts[#parts + 1] = enc(x) end
+      return "[" .. table.concat(parts, ",") .. "]"
+    end
     for k, x in pairs(v) do
       if type(k) == "string" and type(x) ~= "function" and not (type(x) == "table" and x.__act) then
         parts[#parts + 1] = string.format("%q", k) .. ":" .. enc(x)
@@ -300,9 +304,9 @@ function hl.config(t)
   end
 end
 function hl.window_rule(t) if allowed("rules") and type(t) == "table" then out[#out + 1] = "W\t" .. enc(t) end; return t end
--- Hyprland's animation tree has no KWin counterpart yet; named in the log.
+-- Hyprland's animation tree and curves, for mmsimpulse's animation effect.
 function hl.animation(t) if allowed("animations") and type(t) == "table" then out[#out + 1] = "C\tanimation." .. tostring(t.leaf) .. "\t" .. enc(t) end end
-function hl.curve(name) if allowed("animations") then out[#out + 1] = "C\tcurve." .. tostring(name) .. "\ttrue" end end
+function hl.curve(name, t) if allowed("animations") then out[#out + 1] = "C\tcurve." .. tostring(name) .. "\t" .. enc(type(t) == "table" and t or {}) end end
 function hl.monitor(t) if allowed("monitors") and type(t) == "table" then out[#out + 1] = "M\t" .. enc(t) end end
 function hl.env(k, v) if allowed("env") then out[#out + 1] = "E\t" .. tostring(k) .. "\t" .. tostring(v) end end
 -- Hyprland runs hl.on("hyprland.start", f) once, when it starts.
@@ -336,6 +340,8 @@ mms = {
   config = hl.config,
   monitor = hl.monitor,
   window_rule = hl.window_rule,
+  animation = hl.animation,
+  curve = hl.curve,
   env = hl.env,
   on = hl.on,
   exec_cmd = hl.exec_cmd,

@@ -1,0 +1,9 @@
+{
+    "KPlugin": {
+        "Category": "Appearance",
+        "Description": "Hyprland's window and layer animations from mmsimpulse.lua (hl.animation, hl.curve); mmsimpulse turns it on when the config has them",
+        "EnabledByDefault": false,
+        "License": "GPL",
+        "Name": "mmsimpulse animations"
+    }
+}

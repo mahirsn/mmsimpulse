@@ -19,3 +19,9 @@ kcoreaddons_add_plugin(mmsimpulse_workspaceshare
     SOURCES workspaceshare.cpp
     INSTALL_NAMESPACE "kwin/effects/plugins")
 target_link_libraries(mmsimpulse_workspaceshare KWin::kwin Qt6::DBus)
+
+# Hyprland's hl.animation and hl.curve; mmsimpulse-shortcuts turns it on.
+kcoreaddons_add_plugin(mmsimpulse_animations
+    SOURCES animations.cpp
+    INSTALL_NAMESPACE "kwin/effects/plugins")
+target_link_libraries(mmsimpulse_animations KWin::kwin)

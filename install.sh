@@ -85,6 +85,7 @@ build_kwin_plugin() { # source dir, installed file, what it gives
     fi
 }
 build_kwin_plugin kwin-effect kwin/effects/plugins/mmsimpulse_workspaceshare.so "workspace sharing"
+build_kwin_plugin kwin-effect kwin/effects/plugins/mmsimpulse_animations.so "Hyprland's animations"
 # Window list and workspaces for shells written for other compositors. KWin
 # loads it at its next start.
 build_kwin_plugin kwin-mmsimpulse kwin/plugins/kwin-mmsimpulse.so "other shells' window list and workspaces"

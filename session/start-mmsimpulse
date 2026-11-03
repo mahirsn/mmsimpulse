@@ -245,7 +245,7 @@ QT_PLUGINS="$(qtpaths6 --query QT_INSTALL_PLUGINS 2>/dev/null || qmake6 -query Q
 if [[ -f "$LIBKWIN" && -n "$QT_PLUGINS" ]]; then
     have_iids="$(kwin_iids "$LIBKWIN")"
     stale=""
-    for so in "$QT_PLUGINS"/kwin/plugins/kwin-mmsimpulse.so "$QT_PLUGINS"/kwin/effects/plugins/mmsimpulse_workspaceshare.so; do
+    for so in "$QT_PLUGINS"/kwin/plugins/kwin-mmsimpulse.so "$QT_PLUGINS"/kwin/effects/plugins/mmsimpulse_{workspaceshare,animations}.so; do
         [[ -f "$so" ]] || continue
         iid="$(kwin_iids "$so")"
         [[ -n "$iid" ]] && ! grep -qxF "$iid" <<<"$have_iids" && stale="${iid##*[A-Za-z]}"
