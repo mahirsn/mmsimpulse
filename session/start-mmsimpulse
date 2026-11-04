@@ -15,8 +15,7 @@ set -uo pipefail
 
 CONFIG=mmsimpulse
 
-# Which shell runs. Pick one with MMSIMPULSE_SHELL, or by writing its name
-# into ~/.config/mmsimpulse/shell.
+# Which shell runs: mms.shell("<name>") in mmsimpulse.lua, or MMSIMPULSE_SHELL.
 #
 # The name is a profile: a file of that name in ~/.config/mmsimpulse/profiles
 # or ~/.local/share/mmsimpulse/profiles that says how to start a shell and
@@ -28,12 +27,9 @@ CONFIG=mmsimpulse
 # up: KWin, Alt+Tab, Meta+Return for a terminal. That is how to fix the name
 # without a TTY.
 SHELL_CONFIG="${MMSIMPULSE_SHELL:-}"
-# mms.shell("<name>") in mmsimpulse.lua comes before that file.
 MMS_LUA="${XDG_CONFIG_HOME:-$HOME/.config}/$CONFIG/$CONFIG.lua"
 [[ -n "$SHELL_CONFIG" || ! -f "$MMS_LUA" ]] ||
     SHELL_CONFIG="$(PATH="$HOME/.local/bin:$PATH" mmsimpulse-binds shell 2>/dev/null | tr -d '[:space:]')"
-[[ -n "$SHELL_CONFIG" ]] ||
-    SHELL_CONFIG="$(head -n1 "$HOME/.config/$CONFIG/shell" 2>/dev/null | tr -d '[:space:]')"
 PROFILE=""
 SHELL_CMD=""
 if [[ -n "$SHELL_CONFIG" ]]; then

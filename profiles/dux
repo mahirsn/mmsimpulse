@@ -1,5 +1,5 @@
 # Dux Shell (formerly DankMaterialShell): https://github.com/duxlabs-dev/dux-shell
-# Use it with: echo dux > ~/.config/mmsimpulse/shell
+# Use it with mms.shell("dux") in ~/.config/mmsimpulse/mmsimpulse.lua
 #
 # A profile is how the session starts a shell and which keys it gives it:
 #   start=<command>                      starts the shell

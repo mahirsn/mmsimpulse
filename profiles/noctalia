@@ -1,5 +1,5 @@
 # Noctalia: https://github.com/noctalia-dev/noctalia
-# Use it with: echo noctalia > ~/.config/mmsimpulse/shell
+# Use it with mms.shell("noctalia") in ~/.config/mmsimpulse/mmsimpulse.lua
 #
 # Noctalia has a KWin backend of its own, so its workspaces and window list
 # need nothing from here. The format is described in profiles/dux.

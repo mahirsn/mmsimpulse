@@ -19,7 +19,7 @@ require("rules")      -- window rules
 require("animations") -- animations on or off, and their speed
 require("misc")       -- focus on activation
 
--- mms.shell("dux")   -- the shell to start, instead of ~/.config/mmsimpulse/shell
+-- mms.shell("dux")   -- the shell to start: a profile, a Quickshell config or a command
 
 -- A shell written for niri or Hyprland
 --

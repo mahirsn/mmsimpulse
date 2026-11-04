@@ -44,7 +44,7 @@ Pick a shell (below), log out and pick **mmsimpulse**. After a KWin update, rein
 
 ## Shells
 
-Write the shell's name into `~/.config/mmsimpulse/shell`. The name is:
+Pick the shell with `mms.shell("<name>")` in `~/.config/mmsimpulse/mmsimpulse.lua`. The name is:
 
 - a profile in `~/.config/mmsimpulse/profiles/<name>`: how to start the shell and which keys it gets. `profiles/dux` (Dux Shell, which documents the format) and `profiles/noctalia` (Noctalia) come with it,
 - a Quickshell config (`~/.config/quickshell/<name>/shell.qml`), or
@@ -75,7 +75,7 @@ mms.config({ decoration = { rounding = 12, inactive_opacity = 0.9, dim_inactive 
 mms.window_rule({ match = { class = "^spotify$" }, workspace = "9" })
 mms.curve("snappy", { type = "bezier", points = { { 0.05, 0.7 }, { 0.1, 1 } } })
 mms.animation({ leaf = "windowsIn", enabled = true, speed = 3, bezier = "snappy", style = "popin 80%" })
-mms.shell("dux")                                          -- instead of ~/.config/mmsimpulse/shell
+mms.shell("dux")                                          -- the shell to start
 ```
 
 `hl.*` works too (`hl.bind`, `hl.config`, `hl.monitor`, `hl.env`, `hl.window_rule`, `hl.curve`, `hl.animation`, `hl.on("hyprland.start", ...)`), so Hyprland Lua files can be copied in, or taken in where they are:

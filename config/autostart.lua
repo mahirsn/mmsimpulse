@@ -1,6 +1,6 @@
 -- Programs started once with the session, after the shell. Takes effect at
--- the next login. The shell itself is not started here: ~/.config/mmsimpulse/shell
--- or mms.shell picks it.
+-- the next login. The shell itself is not started here: mms.shell in
+-- mmsimpulse.lua picks it.
 --
 -- mms.exec_once("kdeconnectd")
 -- mms.exec_once("nm-applet")
