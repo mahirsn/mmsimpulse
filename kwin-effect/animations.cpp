@@ -25,6 +25,7 @@
 #include "effect/effecthandler.h"
 #include "effect/effectwindow.h"
 #include "effect/timeline.h"
+#include "options.h"
 #include "virtualdesktops.h"
 #include "window.h"
 
@@ -380,6 +381,12 @@ private:
         if (!in.on && !out.on) {
             return;
         }
+        // Meta+N for a workspace another monitor shows only moves the focus
+        // there: the mmsimpulse script puts this monitor back on the one it
+        // left at once, and neither change is a switch anyone sees.
+        if (options->isPerOutputVirtualDesktops() && shownElsewhere(screen, from, to)) {
+            return;
+        }
         // ponytail: a switch while one plays starts over from the old
         // workspace in place; Hyprland carries the moving one on.
         Switch &s = m_switches[screen];
@@ -422,6 +429,19 @@ private:
         }
         effects->setActiveFullScreenEffect(this);
         effects->addRepaint(screen->geometry());
+    }
+
+    static bool shownElsewhere(LogicalOutput *screen, VirtualDesktop *from, VirtualDesktop *to)
+    {
+        const auto screens = effects->screens();
+        return std::ranges::any_of(screens, [&](LogicalOutput *other) {
+            // A shared screen (see the workspaceshare effect) mirrors a monitor's workspace.
+            if (other == screen || other->name().startsWith(QLatin1String("Virtual-virtual-xdp-kde-"))) {
+                return false;
+            }
+            VirtualDesktop *shown = effects->currentDesktop(other);
+            return shown == from || shown == to;
+        });
     }
 
     void finishSwitches()
