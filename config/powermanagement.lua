@@ -1,0 +1,19 @@
+-- Power management: what closing the lid and being idle do. Saved, applied
+-- at once. KDE's own power manager (PowerDevil) does the work: these lines go
+-- into ~/.config/powerdevilrc, so System Settings > Power Management shows
+-- them too. With no line here, PowerDevil keeps its own settings.
+-- Remove the "-- " in front to use one.
+--
+-- mms.power({
+--   lid = "screen-off", -- closing the lid: "screen-off" (only the screens go dark),
+--                       -- "sleep", "hibernate", "lock", "shutdown" or "nothing";
+--                       -- with an external monitor connected it does nothing
+--   sleep = false,      -- sleep when idle: false, or after this many minutes
+--   dim = false,        -- dim the screen when idle: false, or after this many minutes
+--   screen_off = false, -- turn the screens off when idle: false, or after this many minutes
+--   battery = { sleep = 15 }, -- only on battery; "ac" is only when plugged in
+-- })
+--
+-- A shell that dims, turns off and sleeps on its own timers (its profile says
+-- powerdevil=off, as digit's and dux's do) keeps doing so: PowerDevil then
+-- only takes the lid, and sleep, dim and screen_off here are left out.

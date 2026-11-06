@@ -18,6 +18,7 @@ require("decoration") -- borders, corners, opacity, blur, dimming
 require("rules")      -- window rules
 require("animations") -- animations on or off, and their speed
 require("misc")       -- focus on activation
+require("powermanagement") -- closing the lid, sleeping when idle
 
 -- mms.shell("dux")   -- the shell to start: a profile, a Quickshell config or a command
 

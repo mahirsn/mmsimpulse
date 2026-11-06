@@ -462,16 +462,67 @@ DEVICE_KEYS = {
 }
 
 
+def groups(group):
+    """kwriteconfig6's --group arguments; "AC][Display" is the group [AC][Display]."""
+    return [a for g in group.split("][") for a in ("--group", g)]
+
+
 def kconfig(file, group, key, value):
     """Write (None: delete) a KDE config value, telling KWin, which reloads it."""
-    cmd = ["kwriteconfig6", "--notify", "--file", file, "--group", group, "--key", key]
+    cmd = ["kwriteconfig6", "--notify", "--file", file, *groups(group), "--key", key]
     subprocess.run(cmd + (["--delete"] if value is None else [value]), capture_output=True)
 
 
 def kread(file, group, key):
-    res = subprocess.run(["kreadconfig6", "--file", file, "--group", group, "--key", key],
+    res = subprocess.run(["kreadconfig6", "--file", file, *groups(group), "--key", key],
                          capture_output=True, text=True)
     return res.stdout.rstrip("\n") if res.stdout.strip() else None
+
+
+# mms.power: PowerDevil's profiles. Its PowerButtonAction values; "screen-off"
+# only turns the screens off, and the lid does nothing with an external monitor
+# connected (PowerDevil's InhibitLidActionWhenExternalMonitorPresent).
+LID = {"nothing": 0, "sleep": 1, "suspend": 1, "hibernate": 2, "shutdown": 8, "lock": 32,
+       "screen-off": 64}
+POWER_PROFILES = {"ac": "AC", "battery": "Battery", "lowbattery": "LowBattery"}
+# when idle: (group, the on/off key or action, the timeout key, the "on" value)
+POWER_IDLE = {"sleep": ("SuspendAndShutdown", "AutoSuspendAction", "AutoSuspendIdleTimeoutSec", "1"),
+              "dim": ("Display", "DimDisplayWhenIdle", "DimDisplayIdleTimeoutSec", "true"),
+              "screen_off": ("Display", "TurnOffDisplayWhenIdle", "TurnOffDisplayIdleTimeoutSec", "true")}
+POWER_OFF = {"AutoSuspendAction": "0", "DimDisplayWhenIdle": "false", "TurnOffDisplayWhenIdle": "false"}
+
+
+def power_keys(sets, log):
+    """powerdevilrc values of the power.* settings.
+
+    A shell that sleeps and dims on its own (MMSIMPULSE_SHELL_POWER, from its
+    profile's powerdevil=off) keeps doing so: PowerDevil gets only the lid.
+    """
+    if not any(k.startswith("power.") for k in sets):
+        return {}
+    shell_power = os.environ.get("MMSIMPULSE_SHELL_POWER") == "1"
+    out = {}
+    for name, profile in POWER_PROFILES.items():
+        get = lambda k: sets.get("power.%s.%s" % (name, k), sets.get("power." + k))
+        lid = get("lid")
+        if lid is not None:
+            if str(lid) in LID:
+                out["powerdevilrc\x1f%s][SuspendAndShutdown\x1fLidAction" % profile] = str(LID[str(lid)])
+            else:
+                print("mmsimpulse-shortcuts: power.lid = %r is not one of %s" % (lid, ", ".join(LID)), file=log)
+        for key, (group, switch, timeout, on) in POWER_IDLE.items():
+            value = None if shell_power else get(key)
+            if value is None and not shell_power:
+                continue
+            g = "powerdevilrc\x1f%s][%s\x1f" % (profile, group)
+            if value is None or value is False or value == 0 or value in ("false", "off", "no"):
+                out[g + switch] = POWER_OFF[switch]
+            elif isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
+                out[g + timeout] = str(int(value * 60))
+                out[g + switch] = on
+            else:
+                print("mmsimpulse-shortcuts: power.%s = %r is not minutes or false" % (key, value), file=log)
+    return out
 
 
 def apply_settings(lines, state, log):
@@ -510,20 +561,23 @@ def apply_settings(lines, state, log):
                 want["\x1f".join((f, g, k))] = v
             if effect:
                 effects.add(effect)
-        elif key not in RULE_KEYS and section not in ("animation", "curve") \
+        elif key not in RULE_KEYS and section not in ("animation", "curve", "power") \
                 and not (section == "input" and name.split(".")[-1] in DEVICE_KEYS):
             print("mmsimpulse-shortcuts: %s has no KWin counterpart; left out" % key, file=log)
     want.update(animation_keys(sets, log))
+    want.update(power_keys(sets, log))
     if any(k.startswith("kxkbrc") for k in want):
         want.setdefault("kxkbrc\x1fLayout\x1fUse", "true")
         if "kxkbrc\x1fLayout\x1fOptions" in want:
             want.setdefault("kxkbrc\x1fLayout\x1fResetOldOptions", "true")
     files = old["files"]
     reloads = {fk: e for f, g, k, _, e in FILE_KEYS.values() if e for fk in ["\x1f".join((f, g, k))]}
+    power = False
     for fk in list(files):
         if fk not in want:
             kconfig(*fk.split("\x1f"), files.pop(fk))
             reconfigure |= fk.startswith("kwinrc")
+            power |= fk.startswith("powerdevilrc")
             effects.add(ANIMATIONS if ANIMATIONS in fk else reloads.get(fk))
     for fk, value in want.items():
         f, g, k = fk.split("\x1f")
@@ -532,6 +586,7 @@ def apply_settings(lines, state, log):
         if kread(f, g, k) != value:
             kconfig(f, g, k, value)
             reconfigure |= f == "kwinrc"
+            power |= f == "powerdevilrc"
             if ANIMATIONS in fk:
                 effects.add(ANIMATIONS)
     effects.discard(None)
@@ -551,6 +606,10 @@ def apply_settings(lines, state, log):
             reconfigure = True
         if reconfigure:
             bus.call_blocking("org.kde.KWin", "/KWin", "org.kde.KWin", "reconfigure", "", [])
+        if power and bus.name_has_owner("org.kde.Solid.PowerManagement"):
+            for method in ("reparseConfiguration", "refreshStatus"):  # as its settings page does
+                bus.call_blocking("org.kde.Solid.PowerManagement", "/org/kde/Solid/PowerManagement",
+                                  "org.kde.Solid.PowerManagement", method, "", [])
         for e in effects:
             bus.call_blocking("org.kde.KWin", "/Effects", "org.kde.kwin.Effects", "reconfigureEffect", "s", [e])
         names = dbus.Interface(bus.get_object("org.kde.KWin", "/org/kde/KWin/InputDevice"),
@@ -891,6 +950,20 @@ def notify(text):
         pass
 
 
+POWERDEVIL = ["/usr/lib/org_kde_powerdevil", "/usr/libexec/org_kde_powerdevil",
+              "/usr/lib/x86_64-linux-gnu/libexec/org_kde_powerdevil"]
+
+
+def powerdevil_running():
+    for pid in filter(str.isdigit, os.listdir("/proc")):
+        try:
+            if os.path.basename(os.readlink("/proc/%s/exe" % pid)) == "org_kde_powerdevil":
+                return True
+        except OSError:
+            pass
+    return False
+
+
 def watch(kwin, source, rc, appdir, state, profile, config):
     conf = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
     # mmsimpulse.lua and what it requires, the profile, and the configs it
@@ -932,6 +1005,11 @@ def watch(kwin, source, rc, appdir, state, profile, config):
             apply_settings(lines, state, log)
         except Exception as exc:
             print("mmsimpulse-shortcuts: %s" % exc, file=sys.stderr)
+        # mms.power added during the session, to a shell that keeps PowerDevil off
+        if any(l.startswith("set power.") for l in lines) and not powerdevil_running():
+            exe = next((p for p in POWERDEVIL if os.access(p, os.X_OK)), None)
+            if exe:
+                subprocess.Popen([exe], stdout=sys.stderr, stderr=sys.stderr, start_new_session=True)
 
     # The input and monitor settings, now that KWin is up.
     res = subprocess.run([binds_bin, source], capture_output=True, text=True)

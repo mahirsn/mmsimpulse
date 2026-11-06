@@ -110,6 +110,9 @@ SHORTCUTS=("${XDG_CONFIG_HOME:-$HOME/.config}/kglobalshortcutsrc"
 MMSIMPULSE_IMPORTED=""
 [[ -n "$SHELL_CMD" || -f "$MMS_LUA" ]] && MMSIMPULSE_IMPORTED="$(mmsimpulse-binds "$(profile binds)" 2>>"$LOG")"
 export MMSIMPULSE_IMPORTED
+# A shell that dims, turns off and sleeps on its own timers: mms.power then
+# gives PowerDevil only the lid (mmsimpulse-shortcuts).
+[[ "$(profile powerdevil)" == off ]] && export MMSIMPULSE_SHELL_POWER=1
 # A shell written for one compositor talks to it over that compositor's
 # socket: mms.ipc("niri") or mms.ipc("hyprland") (or ipc=... in the profile)
 # has the bridge answer it. Only the shell and what it starts see NIRI_SOCKET
@@ -346,14 +349,17 @@ if command -v xembedsniproxy >/dev/null && ! pgrep -x xembedsniproxy >/dev/null;
 fi
 
 
-# Power management: idle timeouts, DPMS, suspend, brightness. Optional — the
-# session is usable without it, it just never dims or sleeps. A shell that
-# does all of this itself says `powerdevil=off` in its profile: two of them
-# would each dim, lock and suspend on their own timers.
+# Power management: idle timeouts, DPMS, suspend, brightness, the lid.
+# Optional — the session is usable without it, it just never dims or sleeps,
+# and logind alone sleeps on closing the lid. A shell that does the idle part
+# itself says `powerdevil=off` in its profile: two of them would each dim,
+# lock and suspend on their own timers. mms.power (powermanagement.lua) still
+# starts it then, with only the lid left to it.
 UPOWERD="$(find_bin upowerd)"
 [[ -n "$UPOWERD" ]] && nohup "$UPOWERD" >>"$LOG" 2>&1 &
 POWERDEVIL="$(find_bin org_kde_powerdevil)"
-[[ -n "$POWERDEVIL" && "$(profile powerdevil)" != off ]] && nohup "$POWERDEVIL" >>"$LOG" 2>&1 &
+[[ -n "$POWERDEVIL" ]] && { [[ "$(profile powerdevil)" != off ]] || grep -q '^set power\.' <<<"$MMSIMPULSE_IMPORTED"; } \
+    && nohup "$POWERDEVIL" >>"$LOG" 2>&1 &
 
 # cliphist only ever contains what a watcher hands it, and in a session with no
 # desktop environment nothing else starts one: clipboard history stayed empty

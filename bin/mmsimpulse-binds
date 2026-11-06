@@ -343,6 +343,8 @@ mms = {
   animation = hl.animation,
   curve = hl.curve,
   env = hl.env,
+  -- KDE's power management (PowerDevil): what closing the lid and being idle do.
+  power = function(t) if type(t) == "table" then hl.config({ power = t }) end end,
   on = hl.on,
   exec_cmd = hl.exec_cmd,
   exec_once = function(c) if allowed("autostart") then out[#out + 1] = "X\t" .. tostring(c) end end,
