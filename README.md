@@ -32,7 +32,7 @@ makepkg -si
 mmsimpulse-install
 ```
 
-Other distributions: install KWin 6, kglobalaccel, xdg-desktop-portal-kde, python-dbus, python-gobject and wl-clipboard from your package manager, plus cmake, extra-cmake-modules, wayland-protocols, wlr-protocols and the KWin development headers for the KWin plugins. Then:
+Other distributions: install KWin 6, kglobalaccel, xdg-desktop-portal-kde, python-dbus, python-gobject, lua, wl-clipboard and wl-clip-persist from your package manager, plus cmake, extra-cmake-modules, wayland-protocols, wlr-protocols and the KWin development headers for the KWin plugins. Then:
 
 ```
 git clone https://github.com/mahirsn/mmsimpulse
