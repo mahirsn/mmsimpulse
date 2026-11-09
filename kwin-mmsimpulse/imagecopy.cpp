@@ -47,6 +47,7 @@ struct Session
     QSize size;
     Frame *frame = nullptr;
     QMetaObject::Connection resized;
+    QMetaObject::Connection rescaled;
     QMetaObject::Connection gone;
 };
 
@@ -279,6 +280,7 @@ void stop(Session *s)
         return;
     s->stopped = true;
     QObject::disconnect(s->resized);
+    QObject::disconnect(s->rescaled);
     QObject::disconnect(s->gone);
     ext_image_copy_capture_session_v1_send_stopped(s->resource);
     if (s->frame && s->frame->captured && s->frame->presented)
@@ -307,6 +309,7 @@ void sessionDestroyed(wl_resource *r)
 {
     Session *s = sessionOf(r);
     QObject::disconnect(s->resized);
+    QObject::disconnect(s->rescaled);
     QObject::disconnect(s->gone);
     if (s->frame) {
         stopWaiting(s->frame);
@@ -335,7 +338,7 @@ Session *createSession(wl_client *client, wl_resource *parent, uint32_t id, cons
     };
     if (source.output) {
         s->resized = QObject::connect(source.output, &LogicalOutput::geometryChanged, source.output, resize);
-        QObject::connect(source.output, &LogicalOutput::scaleChanged, source.output, resize);
+        s->rescaled = QObject::connect(source.output, &LogicalOutput::scaleChanged, source.output, resize);
         s->gone = QObject::connect(source.output, &QObject::destroyed, source.output, [s] {
             stop(s);
         });
