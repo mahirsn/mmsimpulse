@@ -214,7 +214,19 @@ grep -q 'session-.*\.scope' /proc/self/cgroup \
 env -u WAYLAND_DISPLAY kwin_wayland --xwayland --socket "$WAYLAND_DISPLAY" \
     >"$HOME/.local/share/$CONFIG-compositor.log" 2>&1 &
 KWIN_PID=$!
-trap 'kill "$KWIN_PID" 2>/dev/null' EXIT
+# What the session leaves behind when the compositor is gone. The services it
+# started through their units have lost their display: left as they are, the
+# portal backend is started again by every request and aborts each time, with
+# a core dump each, until the next login.
+end_session() {
+    kill "$KWIN_PID" 2>/dev/null
+    systemctl --user stop plasma-xdg-desktop-portal-kde.service xdg-desktop-portal.service \
+        plasma-kded6.service 2>/dev/null
+    systemctl --user unset-environment WAYLAND_DISPLAY DISPLAY 2>/dev/null
+    [[ -z "${NIRI_SOCK:-}" ]] || rm -f "$NIRI_SOCK"
+    [[ -z "${HYPR_SIG:-}" ]] || rm -rf "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/hypr/$HYPR_SIG"
+}
+trap end_session EXIT
 
 for _ in $(seq 1 40); do
     [[ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$WAYLAND_DISPLAY" ]] && break
@@ -355,8 +367,6 @@ fi
 # itself says `powerdevil=off` in its profile: two of them would each dim,
 # lock and suspend on their own timers. mms.power (powermanagement.lua) still
 # starts it then, with only the lid left to it.
-UPOWERD="$(find_bin upowerd)"
-[[ -n "$UPOWERD" ]] && nohup "$UPOWERD" >>"$LOG" 2>&1 &
 POWERDEVIL="$(find_bin org_kde_powerdevil)"
 [[ -n "$POWERDEVIL" ]] && { [[ "$(profile powerdevil)" != off ]] || grep -q '^set power\.' <<<"$MMSIMPULSE_IMPORTED"; } \
     && nohup "$POWERDEVIL" >>"$LOG" 2>&1 &
@@ -425,4 +435,3 @@ done <<<"$MMSIMPULSE_IMPORTED"
 # The compositor exiting is what ends the session.
 wait "$KWIN_PID"
 [[ -n "$SHELL_PID" ]] && kill "$SHELL_PID" 2>/dev/null
-trap - EXIT
