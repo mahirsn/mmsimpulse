@@ -145,8 +145,8 @@ busctl --user call org.kde.KWin /Effects org.kde.kwin.Effects loadEffect s \
 
 cat <<MSG
 
-Done. Pick a shell (README, "Shells"), for example:
-    echo dux > ~/.config/$CONFIG/shell
-then log out and pick "mmsimpulse" in SDDM.
+Done. Pick a shell (README, "Shells") in ~/.config/$CONFIG/$CONFIG.lua, for example:
+    mms.shell("dux")
+then log out and pick "mmsimpulse" in the login manager.
 Any other session on this machine is untouched.
 MSG
