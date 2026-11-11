@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
-"""mmsimpulse bridge between KWin and the Quickshell shell.
+"""mmsimpulse bridge between KWin and shells.
 
-Why this exists: Quickshell has no D-Bus API in QML and owns no bus name, and
 KWin publishes no window list on D-Bus. The only way to see windows is a KWin
-script, whose only way out is callDBus(). So something has to own a bus name,
-receive those pushes, and hand the result to the shell in a form Quickshell can
-read. That is this process. It prints one JSON snapshot per line on stdout,
-which KwinBackend.qml consumes exactly the way NiriBackend.qml consumes
-`niri msg event-stream`.
-
-Virtual desktops come straight off org.kde.KWin, which does expose them.
+script, whose only way out is callDBus(). So this process owns a bus name
+(org.mmsimpulse.KWin), loads that script, receives its pushes and merges them
+with KWin's virtual desktops. Shells get the result three ways: the Snapshot
+method on D-Bus, niri's socket and Hyprland's two sockets (mms.ipc). Window
+actions that KWin has no D-Bus call for go back in as one-shot scripts.
 
 Nothing here knows about tiling. mmsimpulse runs with [Tiling] Enabled=false.
 """
@@ -40,6 +37,7 @@ SCRIPT = os.environ.get(
     os.path.expanduser("~/.local/share/mmsimpulse/kwin/mmsimpulse-windows.js"),
 )
 DEBOUNCE_MS = 60
+SEND_TIMEOUT = 0.5
 
 
 # ---------------------------------------------------------------------------
@@ -502,7 +500,9 @@ class NiriIpc:
 
     def send(self, client, obj):
         try:
-            client["conn"].setblocking(True)
+            # A client that stopped reading must not stop the bridge: it is
+            # dropped when its socket takes nothing for this long.
+            client["conn"].settimeout(SEND_TIMEOUT)
             client["conn"].sendall((json.dumps(obj) + "\n").encode())
             client["conn"].setblocking(False)
         except OSError:
@@ -852,7 +852,7 @@ class HyprIpc:
             conn, _ = sock.accept()
         except OSError:
             return
-        conn.setblocking(True)
+        conn.settimeout(SEND_TIMEOUT)  # as NiriIpc.send
         self.events.append(conn)
 
     def broadcast(self, line):
