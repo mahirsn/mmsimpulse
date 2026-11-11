@@ -63,8 +63,11 @@ struct Frame
     Session *session = nullptr;
     wl_resource *buffer = nullptr;
     bool captured = false;
+    // Between capture and its answer, while it waits for the next picture.
+    bool waiting = false;
     BufferWatch watch{{}, this};
     QMetaObject::Connection presented;
+    QMetaObject::Connection outputGone;
 };
 
 // The size a source's pictures are, in buffer pixels; empty when it has none.
@@ -138,7 +141,9 @@ Frame *frameOf(wl_resource *r)
 
 void stopWaiting(Frame *f)
 {
+    f->waiting = false;
     QObject::disconnect(f->presented);
+    QObject::disconnect(f->outputGone);
     if (f->buffer) {
         wl_list_remove(&f->watch.listener.link);
         f->buffer = nullptr;
@@ -210,7 +215,14 @@ void capture(wl_resource *r)
     // Later frames wait for the screen to change, which keeps a recorder from
     // copying the same picture in a loop: the next frame the output shows.
     RenderLoop *loop = output->backendOutput()->renderLoop();
+    f->waiting = true;
     f->presented = QObject::connect(loop, &RenderLoop::framePresented, loop, [f] {
+        deliver(f);
+    });
+    // The output going takes its render loop along, and the picture it would
+    // have announced never comes: answer now. An output source stops its
+    // session then; a window is on another output by now.
+    f->outputGone = QObject::connect(output, &QObject::destroyed, output, [f] {
         deliver(f);
     });
 }
@@ -228,10 +240,8 @@ const struct ext_image_copy_capture_frame_v1_interface s_frameImpl = {
         f->buffer = buffer;
         f->watch.listener.notify = [](wl_listener *listener, void *) {
             Frame *f = reinterpret_cast<BufferWatch *>(listener)->frame;
-            const bool waiting = static_cast<bool>(f->presented);
-            wl_list_remove(&f->watch.listener.link);
-            f->buffer = nullptr;
-            QObject::disconnect(f->presented);
+            const bool waiting = f->waiting;
+            stopWaiting(f);
             if (waiting)
                 ext_image_copy_capture_frame_v1_send_failed(f->resource, EXT_IMAGE_COPY_CAPTURE_FRAME_V1_FAILURE_REASON_UNKNOWN);
         };
@@ -283,7 +293,7 @@ void stop(Session *s)
     QObject::disconnect(s->rescaled);
     QObject::disconnect(s->gone);
     ext_image_copy_capture_session_v1_send_stopped(s->resource);
-    if (s->frame && s->frame->captured && s->frame->presented)
+    if (s->frame && s->frame->waiting)
         fail(s->frame, EXT_IMAGE_COPY_CAPTURE_FRAME_V1_FAILURE_REASON_STOPPED);
 }
 

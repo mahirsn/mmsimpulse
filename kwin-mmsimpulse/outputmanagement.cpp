@@ -87,8 +87,14 @@ void headDestroyed(wl_resource *r)
     auto *h = static_cast<OutputManagement::Head *>(wl_resource_get_user_data(r));
     for (wl_resource *m : std::as_const(h->modes))
         static_cast<ModeRef *>(wl_resource_get_user_data(m))->head = nullptr;
-    if (h->manager && h->output)
-        h->manager->heads[h->output] = nullptr;
+    // By value, not by h->output: that is null already when the output went
+    // before the manager's next sync, and the manager would keep this head.
+    if (h->manager) {
+        for (auto &head : h->manager->heads) {
+            if (head == h)
+                head = nullptr;
+        }
+    }
     delete h;
 }
 
@@ -168,6 +174,8 @@ struct Configuration
     bool invalid = false;
     OutputConfiguration config;
     QSet<BackendOutput *> configured;
+    // Its heads outlive it when the client destroys it first.
+    QList<struct ConfigHead *> heads;
 };
 
 struct ConfigHead
@@ -328,10 +336,14 @@ const struct zwlr_output_configuration_v1_interface s_configImpl = {
         auto *ch = new ConfigHead;
         wl_resource *res = wl_resource_create(client, &zwlr_output_configuration_head_v1_interface, wl_resource_get_version(r), id);
         wl_resource_set_implementation(res, &s_configHeadImpl, ch, [](wl_resource *res) {
-            delete configHeadOf(res);
+            ConfigHead *head = configHeadOf(res);
+            if (head->configuration)
+                head->configuration->heads.removeOne(head);
+            delete head;
         });
         if (BackendOutput *o = configure(r, head)) {
             ch->configuration = configurationOf(r);
+            ch->configuration->heads << ch;
             ch->output = o;
             ch->configuration->config.changeSet(o)->enabled = true;
         }
@@ -368,7 +380,10 @@ const struct zwlr_output_manager_v1_interface s_managerImpl = {
         c->serial = serial;
         c->resource = wl_resource_create(client, &zwlr_output_configuration_v1_interface, wl_resource_get_version(r), id);
         wl_resource_set_implementation(c->resource, &s_configImpl, c, [](wl_resource *res) {
-            delete configurationOf(res);
+            Configuration *c = configurationOf(res);
+            for (ConfigHead *head : std::as_const(c->heads))
+                head->configuration = nullptr;
+            delete c;
         });
     },
     .stop = [](wl_client *, wl_resource *r) {

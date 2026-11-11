@@ -126,7 +126,9 @@ void copy(wl_resource *r, wl_resource *buffer, bool damage)
         stopWaiting(f);
         copyInto(f, buffer, true);
     });
-    f->outputGone = QObject::connect(f->output, &QObject::destroyed, loop, [f] {
+    // On the output itself: the render loop can go before it, and with the
+    // loop as the context this would go too and the client wait for ever.
+    f->outputGone = QObject::connect(f->output, &QObject::destroyed, f->output, [f] {
         stopWaiting(f);
         zwlr_screencopy_frame_v1_send_failed(f->resource);
     });
