@@ -214,19 +214,22 @@ grep -q 'session-.*\.scope' /proc/self/cgroup \
 env -u WAYLAND_DISPLAY kwin_wayland --xwayland --socket "$WAYLAND_DISPLAY" \
     >"$HOME/.local/share/$CONFIG-compositor.log" 2>&1 &
 KWIN_PID=$!
+trap 'kill "$KWIN_PID" 2>/dev/null' EXIT
 # What the session leaves behind when the compositor is gone. The services it
 # started through their units have lost their display: left as they are, the
 # portal backend is started again by every request and aborts each time, with
-# a core dump each, until the next login.
-end_session() {
-    kill "$KWIN_PID" 2>/dev/null
-    systemctl --user stop plasma-xdg-desktop-portal-kde.service xdg-desktop-portal.service \
-        plasma-kded6.service 2>/dev/null
-    systemctl --user unset-environment WAYLAND_DISPLAY DISPLAY 2>/dev/null
-    [[ -z "${NIRI_SOCK:-}" ]] || rm -f "$NIRI_SOCK"
-    [[ -z "${HYPR_SIG:-}" ]] || rm -rf "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/hypr/$HYPR_SIG"
-}
-trap end_session EXIT
+# a core dump each, until the next login. Done by a unit of its own, because
+# ending the session (loginctl terminate-session) kills this script and all it
+# started at once.
+systemd-run --user --quiet --collect --unit="$CONFIG-end-$$" sh -c '
+    tail --pid="$1" -f /dev/null
+    [ -z "$2" ] || rm -f "$2"
+    [ -z "$3" ] || rm -rf "$3"
+    # Not when the next session is already up: these are its services then.
+    systemctl --user show-environment | grep -qxF "WAYLAND_DISPLAY=$4" || exit 0
+    systemctl --user stop plasma-xdg-desktop-portal-kde.service xdg-desktop-portal.service plasma-kded6.service
+    systemctl --user unset-environment WAYLAND_DISPLAY DISPLAY' sh "$KWIN_PID" "$NIRI_SOCK" \
+    "${HYPR_SIG:+${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/hypr/$HYPR_SIG}" "$WAYLAND_DISPLAY" 2>>"$LOG"
 
 for _ in $(seq 1 40); do
     [[ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$WAYLAND_DISPLAY" ]] && break
@@ -435,3 +438,4 @@ done <<<"$MMSIMPULSE_IMPORTED"
 # The compositor exiting is what ends the session.
 wait "$KWIN_PID"
 [[ -n "$SHELL_PID" ]] && kill "$SHELL_PID" 2>/dev/null
+trap - EXIT
