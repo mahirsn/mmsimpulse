@@ -39,6 +39,20 @@ MMS_MARK = "# mmsimpulse.lua"
 join = lambda keys, esc=True: "\\t".join(k.replace(",", "\\,") if esc else k for k in keys) or "none"
 
 
+def write(path, text):
+    """Replace a file in one step: a crash or a power cut halfway leaves the old
+    one, not an empty kglobalshortcutsrc."""
+    path = os.path.realpath(path)
+    tmp = "%s.mmsimpulse-%d" % (path, os.getpid())
+    with open(tmp, "w") as f:
+        f.write(text)
+        f.flush()
+        os.fsync(f.fileno())
+    if os.path.exists(path):
+        os.chmod(tmp, os.stat(path).st_mode & 0o7777)
+    os.replace(tmp, path)
+
+
 def split_bind(text):
     """'Meta+)\\tMeta+==cmd' -> ('Meta+)\\tMeta+=', 'cmd'): '=' can be a key too."""
     for m in re.finditer("=", text):
@@ -215,8 +229,8 @@ def apply(rc, appdir, state, profile, config, imported, name_of):
     lines[:] = out
 
     os.makedirs(os.path.dirname(state), exist_ok=True)
-    json.dump(saved, open(state, "w"))
-    open(rc, "w").write("\n".join(lines))
+    write(state, json.dumps(saved))
+    write(rc, "\n".join(lines))
     return before, lines
 
 
@@ -643,7 +657,7 @@ def apply_settings(lines, state, log):
         print("mmsimpulse-shortcuts: input devices: %s" % exc, file=log)
 
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    json.dump(old, open(path, "w"))
+    write(path, json.dumps(old))
     apply_monitors([json.loads(l[8:]) for l in lines if l.startswith("monitor ")], log)
 
 
@@ -818,15 +832,13 @@ def apply_rules(rules, sets, bus, log):
             back.setdefault(match, []).extend([DEFAULTS[key], "%srule=%d" % (key, 5 if key == "noborder" else FORCE)])
         extra = [("mmsimpulse-back-%d" % (n + 1), ["Description=mmsimpulse: back to default"] + list(m) + b)
                  for n, (m, b) in enumerate(back.items())]
-        with open(path, "w") as f:
-            f.write(render(out, extra))
+        write(path, render(out, extra))
         try:
             bus.call_blocking("org.kde.KWin", "/KWin", "org.kde.KWin", "reconfigure", "", [])
             time.sleep(0.5)
         except Exception as exc:
             print("mmsimpulse-shortcuts: window rules: %s" % exc, file=log)
-    with open(path, "w") as f:
-        f.write(text)
+    write(path, text)
     return True
 
 
