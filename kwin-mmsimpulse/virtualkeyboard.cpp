@@ -82,6 +82,8 @@ constexpr Modifier s_modifiers[] = {
     {XKB_MOD_NAME_CTRL, KEY_LEFTCTRL},
     {XKB_MOD_NAME_ALT, KEY_LEFTALT},
     {XKB_MOD_NAME_LOGO, KEY_LEFTMETA},
+    // The third level: '@' on a Turkish or German layout is AltGr and a key.
+    {"Mod5", KEY_RIGHTALT},
 };
 
 struct Keyboard
