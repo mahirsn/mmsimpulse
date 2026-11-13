@@ -70,6 +70,10 @@ function push() {
         for (let i = 0; i < screens.length; i++) {
             const desktop = workspace.currentDesktopForScreen(screens[i]);
             const g = screens[i].geometry;
+            // The part windows may cover (the bar and other panels left out),
+            // relative to the output; KWin's quick tiles are fractions of it.
+            let a = g;
+            try { a = workspace.clientArea(KWin.MaximizeArea, screens[i], desktop); } catch (e) {}
             outputs.push({
                 name: screens[i].name,
                 model: screens[i].model || "",
@@ -78,6 +82,7 @@ function push() {
                 // Scaled pixels, as niri's logical outputs.
                 x: g.x, y: g.y, width: g.width, height: g.height,
                 scale: screens[i].devicePixelRatio || 1,
+                area: { x: a.x - g.x, y: a.y - g.y, width: a.width, height: a.height },
                 currentDesktop: desktop ? String(desktop.id) : ""
             });
         }

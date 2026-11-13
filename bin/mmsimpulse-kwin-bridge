@@ -142,6 +142,7 @@ def build_snapshot(payload, desktops, current_id):
         desk = by_uuid.get(o.get("currentDesktop", ""), current)
         here = [w for w in payload.get("windows", []) if shown(w, name, desk)]
         outputs.append({"name": name, "model": o.get("model", ""), "current": desk,
+                        "area": o.get("area"),
                         "hasfullscreen": any(w.get("fullscreen") for w in here),
                         "hasmaximized": any(w.get("maximized") for w in here)})
 
@@ -176,6 +177,35 @@ ACTIONS = {
     "nextOutput": "workspace.activeWindow = w; workspace.slotWindowToNextScreen();",
     "pin": "w.onAllDesktops = !w.onAllDesktops;",
 }
+
+
+# Where a window opened from the dock goes. The halves and quarters are KWin's
+# own quick tiles; "float" is the middle of the work area, at these fractions.
+PLACES = {
+    "left": "workspace.slotWindowQuickTileLeft();",
+    "right": "workspace.slotWindowQuickTileRight();",
+    "topLeft": "workspace.slotWindowQuickTileTopLeft();",
+    "topRight": "workspace.slotWindowQuickTileTopRight();",
+    "bottomLeft": "workspace.slotWindowQuickTileBottomLeft();",
+    "bottomRight": "workspace.slotWindowQuickTileBottomRight();",
+    "maximize": "w.setMaximize(true, true);",
+    "float": (
+        "w.setMaximize(false, false);\n"
+        "    const a = workspace.clientArea(KWin.MaximizeArea, w);\n"
+        "    w.frameGeometry = { x: Math.round(a.x + a.width * 0.2), y: Math.round(a.y + a.height * 0.15),"
+        " width: Math.round(a.width * 0.6), height: Math.round(a.height * 0.7) };"
+    ),
+}
+
+
+def place_script(zone, output):
+    """Body of a window script: move `w` to `output`, then into `zone`."""
+    return (
+        "const out = workspace.screens.find(s => s.name === %s);\n"
+        "    if (out && w.output !== out) workspace.sendClientToScreen(w, out);\n"
+        "    workspace.activeWindow = w;\n"
+        "    %s" % (json.dumps(output), PLACES[zone])
+    )
 
 
 def desktop_script(output_name, position):
@@ -245,6 +275,11 @@ def window_script(window_uuid, action, value=""):
             ".find(d => d.x11DesktopNumber === %d);\n"
             "    if (d) w.desktops = [d];" % int(value)
         )
+    elif action == "place":
+        zone, _, output = value.partition("@")
+        if zone not in PLACES:
+            raise ValueError(f"unknown place: {zone}")
+        body = place_script(zone, output)
     elif action in ACTIONS:
         body = ACTIONS[action]
     else:
