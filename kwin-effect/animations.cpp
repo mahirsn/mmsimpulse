@@ -111,8 +111,11 @@ public:
         // nothing, the old one goes from nothing to its offset.
         const qreal t = in ? s.in.value() : s.out.value();
         data += (in ? s.inOffset : s.outOffset) * (in ? 1 - t : t);
-        // Nothing of it on the monitor next to this one.
-        const Region onScreen = deviceRegion.intersected(viewport.mapToDeviceCoordinatesAligned(s.screen->geometry()));
+        // Nothing of it on the monitor next to this one, nor in the panels' band: a window
+        // passing behind a see-through bar flashes in it. Where the window rests stays drawn.
+        const Region rest = Region(viewport.mapToDeviceCoordinatesAligned(effects->clientArea(MaximizeArea, s.screen)))
+                                .united(viewport.mapToDeviceCoordinatesAligned(w->frameGeometry()));
+        const Region onScreen = deviceRegion.intersected(rest.intersected(viewport.mapToDeviceCoordinatesAligned(s.screen->geometry())));
         return AnimationEffect::paintWindow(renderTarget, viewport, w, mask, onScreen, data);
     }
 
