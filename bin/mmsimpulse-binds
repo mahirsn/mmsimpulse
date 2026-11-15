@@ -54,6 +54,8 @@ KEYS = {"return": "Return", "enter": "Return", "space": "Space", "tab": "Tab", "
         "xf86monbrightnessup": "Monitor Brightness Up", "xf86monbrightnessdown": "Monitor Brightness Down",
         "xf86audioplay": "Media Play", "xf86audiopause": "Media Pause", "xf86audionext": "Media Next",
         "xf86audioprev": "Media Previous", "xf86audiostop": "Media Stop"}
+# The extra keys laptops have (Asus's Armoury Crate key gives XF86Launch3).
+KEYS.update({"xf86launch%s" % c: "Launch (%s)" % c.upper() for c in "0123456789abcdef"})
 
 
 def kde_keys(mods, key):
