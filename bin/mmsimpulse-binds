@@ -83,7 +83,9 @@ def kde_keys(mods, key):
     if "Shift" in out and len(k) == 1 and not k.isalpha():
         # KWin hands the daemon the character a key gives with Shift, and no
         # Shift: Super+Shift+2 arrives as Super+@ on a US layout and as
-        # Super+' on a Turkish one, so the key is bound as those.
+        # Super+' on a Turkish one, so the key is bound as what the active
+        # layout gives. Binding every layout's would clash: ^ is Shift+3 on a
+        # Turkish layout and Shift+6 on a US one.
         alts = shifted(k)
         if alts:
             mods_ = [m for m in MOD_ORDER if m in out and m != "Shift"]
@@ -91,8 +93,18 @@ def kde_keys(mods, key):
     return "+".join([m for m in MOD_ORDER if m in out] + [k])
 
 
+def active_layout():
+    """The index of the layout in use; 0, the first one, before KWin is up."""
+    try:
+        import dbus
+        return int(dbus.SessionBus().get_object("org.kde.keyboard", "/Layouts").getLayout(
+            dbus_interface="org.kde.KeyboardLayouts"))
+    except Exception:
+        return 0
+
+
 def shifted(ch):
-    """What the key that types `ch` types with Shift, in each configured layout."""
+    """What the key that types `ch` types with Shift, in the active layout."""
     if ch in SHIFTED:
         return SHIFTED[ch]
     out = []
@@ -116,6 +128,7 @@ def shifted(ch):
             layouts = [l for l in m.group(1).split(",") if l] or layouts
         except (OSError, AttributeError):
             pass
+        layouts = [layouts[active_layout() % len(layouts)]]
         sym = lambda km, code, level: (lambda p: x.xkb_keysym_to_utf32(p[0])
                                        if x.xkb_keymap_key_get_syms_by_level(km, code, 0, level, ctypes.byref(p))
                                        else 0)(ctypes.POINTER(ctypes.c_uint32)())

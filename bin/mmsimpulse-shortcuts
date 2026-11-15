@@ -1028,14 +1028,28 @@ def watch(kwin, source, rc, appdir, state, profile, config):
     sys.stderr.write(res.stderr)
     current = res.stdout.splitlines()
     settings(current)
-    last, seen = watched(paths), devices()
+    def layout():
+        # A Shift bind is bound as what the active layout types (mmsimpulse-binds).
+        # ponytail: polled with the files, so a switch rebinds within a second
+        # plus the daemon's refresh; listen for layoutChanged if that is too slow.
+        try:
+            import dbus
+            return int(dbus.SessionBus().get_object("org.kde.keyboard", "/Layouts").getLayout(
+                dbus_interface="org.kde.KeyboardLayouts"))
+        except Exception:
+            return None
+
+    # The login bound the first layout's; KWin may have come up in another.
+    last, seen, lay = watched(paths), devices(), 0
     while True:
         time.sleep(1)
         try:
             os.kill(kwin, 0)
         except OSError:
             return 0  # the session ended
-        now = watched(paths)
+        now, switched = watched(paths), layout()
+        if switched is not None and switched != lay:
+            lay, last = switched, None  # rebind below, as for a saved file
         if now == last:
             plugged = devices()
             if plugged is not None and plugged != seen:  # a mouse plugged in gets them too
