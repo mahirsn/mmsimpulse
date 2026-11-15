@@ -57,6 +57,11 @@ public:
         });
         connect(effects, &EffectsHandler::windowDeleted, this, [this](EffectWindow *w) {
             m_running.remove(w);
+            // Let go of it now, as KWin's Slide does: the reference outliving
+            // the window crashed KWin when the switch ended.
+            for (auto &entry : m_switches) {
+                entry.second.visible.remove(w);
+            }
         });
         connect(effects, &EffectsHandler::desktopChanged, this, &HyprAnimationsEffect::switchWorkspace);
         connect(effects, &EffectsHandler::screenRemoved, this, [this](LogicalOutput *screen) {
@@ -344,7 +349,7 @@ private:
         TimeLine in, out;
         QPointF inOffset, outOffset;
         bool inFade = false, outFade = false;
-        QList<EffectWindowVisibleRef> visible;
+        QHash<EffectWindow *, EffectWindowVisibleRef> visible;
     };
 
     // Workspace::startAnimation for one side: where the workspace is when it
@@ -422,7 +427,7 @@ private:
                 continue;
             }
             if (!isIn) {
-                s.visible << EffectWindowVisibleRef(w, EffectWindow::PAINT_DISABLED_BY_DESKTOP);
+                s.visible.insert(w, EffectWindowVisibleRef(w, EffectWindow::PAINT_DISABLED_BY_DESKTOP));
             }
             // The fade as a window animation, as KWin's Fade Desktop does.
             if (isIn ? s.inFade : s.outFade) {
