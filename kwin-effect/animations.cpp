@@ -92,6 +92,10 @@ public:
 
     ~HyprAnimationsEffect() override
     {
+        // AnimationEffect's destructor lets go of the windows it animates, and a
+        // closed one is deleted then: our windowDeleted slot would run on members
+        // already gone (KWin crashed when the effect was unloaded).
+        disconnect(effects, nullptr, this, nullptr);
         m_switches.clear();
         finishSwitches();
     }
