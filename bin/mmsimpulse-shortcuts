@@ -394,6 +394,10 @@ FILE_KEYS = {
     # the same between two tiles (KWin has one padding, half on each side).
     "general.gaps_out": ("kwinrc", "mmsimpulse", "QuickTileGap",
                          lambda v: str(int(str(v).replace(",", " ").split()[0])), None),
+    # Hyprland's general.snap: a moved window snaps to other windows within
+    # window_gap px and to the screen edges within monitor_gap px; off, to nothing.
+    "general.snap.window": ("kwinrc", "Windows", "WindowSnapZone", lambda v: str(int(v)), None),
+    "general.snap.monitor": ("kwinrc", "Windows", "BorderSnapZone", lambda v: str(int(v)), None),
     "general.allow_tearing": ("kwinrc", "Compositing", "AllowTearing", BOOL, None),
     "decoration.blur.enabled": ("kwinrc", "Plugins", "blurEnabled", BOOL, None),
     "decoration.blur.size+passes": ("kwinrc", "Effect-blur", "BlurStrength", BLUR, "blur"),
@@ -591,6 +595,12 @@ def apply_settings(lines, state, log):
     want, reconfigure, effects = {}, False, set()
     if "decoration.rounding" in sets:  # both corners, as Hyprland's one radius
         sets.setdefault("decoration.rounding.inactive", sets["decoration.rounding"])
+    snap = {k: sets.pop("general.snap." + k) for k in ("enabled", "window_gap", "monitor_gap")
+            if "general.snap." + k in sets}
+    if snap:  # Hyprland's defaults: off, 10 and 10
+        on = BOOL(snap.get("enabled", False)) == "true"
+        sets["general.snap.window"] = snap.get("window_gap", 10) if on else 0
+        sets["general.snap.monitor"] = snap.get("monitor_gap", 10) if on else 0
     size, passes = sets.pop("decoration.blur.size", None), sets.pop("decoration.blur.passes", None)
     if size is not None or passes is not None:  # one KWin strength for both, Hyprland's defaults 8 and 1
         sets["decoration.blur.size+passes"] = (8 if size is None else size, 1 if passes is None else passes)

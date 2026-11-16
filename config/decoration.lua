@@ -9,6 +9,11 @@
 --     allow_tearing = false,  -- let fullscreen games tear for lower latency
 --     gaps_out      = 0,      -- px around windows tiled to a half or quarter
 --                             -- of the screen, and between two of them
+--     snap = {                -- a moved window snaps to other windows and to the
+--       enabled     = false,  -- screen edges; KWin also counts a shell's panels
+--       window_gap  = 10,     -- and desktop widgets as windows, so window_gap = 0
+--       monitor_gap = 10,     -- keeps only the screen edges
+--     },
 --   },
 --   decoration = {
 --     rounding         = 12,  -- corner radius; needs a rounded corners effect
