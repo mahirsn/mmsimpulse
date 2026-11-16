@@ -142,7 +142,7 @@ def build_snapshot(payload, desktops, current_id):
         desk = by_uuid.get(o.get("currentDesktop", ""), current)
         here = [w for w in payload.get("windows", []) if shown(w, name, desk)]
         outputs.append({"name": name, "model": o.get("model", ""), "current": desk,
-                        "area": o.get("area"),
+                        "x": o.get("x", 0), "y": o.get("y", 0), "area": o.get("area"),
                         "hasfullscreen": any(w.get("fullscreen") for w in here),
                         "hasmaximized": any(w.get("maximized") for w in here)})
 
