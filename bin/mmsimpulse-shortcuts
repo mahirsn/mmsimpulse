@@ -374,6 +374,13 @@ BORDERS = [(0, "None"), (2, "Tiny"), (4, "Normal"), (6, "Large"), (9, "VeryLarge
 BORDER = lambda v: v if isinstance(v, str) and not v.isdigit() else \
     next((n for px, n in BORDERS if int(v) <= px), "Oversized")
 CORNERS = "kwin4_effect_shapecorners"
+# Hyprland and KWin both blur with dual Kawase. Hyprland's size s on p passes
+# reaches 2*s*(2^p-1) px (Kawase.cpp dualKawaseDamageRadius); KWin's strength
+# 1..15 is a pass count and an offset with the same reach formula, built in
+# KWin 6.8 blur.cpp. Their reaches, strength 1 first:
+KWIN_BLUR_REACH = [3, 4, 15, 18, 36.4, 44.8, 53.2, 61.6, 70, 115, 140, 165, 190, 215, 240]
+BLUR = lambda v: str(1 + min(range(15), key=lambda i: abs(
+    KWIN_BLUR_REACH[i] - 2 * max(int(v[0]), 1) * ((1 << min(max(int(v[1]), 1), 8)) - 1))))
 FILE_KEYS = {
     "input.kb_layout": ("kxkbrc", "Layout", "LayoutList", str, None),
     "input.kb_variant": ("kxkbrc", "Layout", "VariantList", str, None),
@@ -383,8 +390,13 @@ FILE_KEYS = {
     "input.repeat_delay": ("kcminputrc", "Keyboard", "RepeatDelay", str, None),
     "input.follow_mouse": ("kwinrc", "Windows", "FocusPolicy", FOCUS, None),
     "general.border_size": ("kwinrc", "org.kde.kdecoration2", "BorderSize", BORDER, None),
+    # The plugin's padding on KWin's quick tiles: gaps_out at the screen edges, and
+    # the same between two tiles (KWin has one padding, half on each side).
+    "general.gaps_out": ("kwinrc", "mmsimpulse", "QuickTileGap",
+                         lambda v: str(int(str(v).replace(",", " ").split()[0])), None),
     "general.allow_tearing": ("kwinrc", "Compositing", "AllowTearing", BOOL, None),
     "decoration.blur.enabled": ("kwinrc", "Plugins", "blurEnabled", BOOL, None),
+    "decoration.blur.size+passes": ("kwinrc", "Effect-blur", "BlurStrength", BLUR, "blur"),
     "decoration.dim_inactive": ("kwinrc", "Plugins", "diminactiveEnabled", BOOL, None),
     "decoration.dim_strength": ("kwinrc", "Effect-diminactive", "Strength",
                                 lambda v: str(round(float(v) * 100)), "diminactive"),
@@ -579,6 +591,9 @@ def apply_settings(lines, state, log):
     want, reconfigure, effects = {}, False, set()
     if "decoration.rounding" in sets:  # both corners, as Hyprland's one radius
         sets.setdefault("decoration.rounding.inactive", sets["decoration.rounding"])
+    size, passes = sets.pop("decoration.blur.size", None), sets.pop("decoration.blur.passes", None)
+    if size is not None or passes is not None:  # one KWin strength for both, Hyprland's defaults 8 and 1
+        sets["decoration.blur.size+passes"] = (8 if size is None else size, 1 if passes is None else passes)
     for key, value in sets.items():
         section, _, name = key.partition(".")
         if key == "animations.duration" and BOOL(sets.get("animations.enabled", True)) == "false":

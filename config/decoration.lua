@@ -7,6 +7,8 @@
 --     border_size   = 2,      -- window border, as the decoration theme draws it:
 --                             -- 0 none, about 2 tiny, 4 normal, 6 large ... (or "Normal", "Large")
 --     allow_tearing = false,  -- let fullscreen games tear for lower latency
+--     gaps_out      = 0,      -- px around windows tiled to a half or quarter
+--                             -- of the screen, and between two of them
 --   },
 --   decoration = {
 --     rounding         = 12,  -- corner radius; needs a rounded corners effect
@@ -17,10 +19,12 @@
 --     dim_strength     = 0.25, -- 0.0 .. 1.0
 --     blur = {
 --       enabled = true,       -- KWin's blur behind see-through windows and panels
+--       size    = 8,          -- blur radius and number of passes, as Hyprland's;
+--       passes  = 1,          -- KWin takes its nearest blur strength (1..15)
 --     },
 --   },
 -- })
 --
--- Gaps, layouts, border colours and shadows have no KWin counterpart here
+-- gaps_in, layouts, border colours and shadows have no KWin counterpart here
 -- (no tiling; colours and shadows come from the decoration theme): the log
--- names them.
+-- names them. Maximized windows have no gaps.
