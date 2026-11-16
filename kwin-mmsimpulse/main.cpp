@@ -7,9 +7,10 @@
 // (hyprland-global-shortcuts) and window addresses (hyprland-toplevel-mapping). With
 // them a Quickshell shell, waybar and the like show windows and workspaces on
 // KWin without knowing anything about it. It also keeps KWin's window
-// animations off such a shell's panels.
+// animations off such a shell's panels, and puts gaps around quick tiles.
 
 #include "animations.h"
+#include "gaps.h"
 #include "globalshortcuts.h"
 #include "imagecopy.h"
 #include "outputmanagement.h"
@@ -38,6 +39,7 @@ public:
         , m_animations(std::make_unique<LayerAnimations>())
         , m_globalShortcuts(std::make_unique<GlobalShortcuts>())
         , m_toplevelMapping(std::make_unique<ToplevelMapping>())
+        , m_gaps(std::make_unique<QuickTileGaps>())
     {
     }
 
@@ -52,6 +54,7 @@ private:
     std::unique_ptr<LayerAnimations> m_animations;
     std::unique_ptr<GlobalShortcuts> m_globalShortcuts;
     std::unique_ptr<ToplevelMapping> m_toplevelMapping;
+    std::unique_ptr<QuickTileGaps> m_gaps;
 };
 
 class MmsimpulsePluginFactory : public PluginFactory

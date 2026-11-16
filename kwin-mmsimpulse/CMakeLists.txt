@@ -44,7 +44,7 @@ foreach(xml ${PROTOCOLS})
 endforeach()
 
 kcoreaddons_add_plugin(kwin-mmsimpulse
-    SOURCES main.cpp animations.cpp capture.cpp globalshortcuts.cpp toplevelmapping.cpp imagecopy.cpp outputmanagement.cpp virtualkeyboard.cpp toplevels.cpp toplevellist.cpp screencopy.cpp workspaces.cpp ${PROTOCOL_SOURCES}
+    SOURCES main.cpp animations.cpp gaps.cpp capture.cpp globalshortcuts.cpp toplevelmapping.cpp imagecopy.cpp outputmanagement.cpp virtualkeyboard.cpp toplevels.cpp toplevellist.cpp screencopy.cpp workspaces.cpp ${PROTOCOL_SOURCES}
     INSTALL_NAMESPACE "kwin/plugins")
 target_include_directories(kwin-mmsimpulse PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 pkg_check_modules(XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
