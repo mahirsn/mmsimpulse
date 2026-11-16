@@ -15,6 +15,8 @@
     effects hand an animation to one another. Switching workspaces plays
     Hyprland's workspacesIn and workspacesOut on the monitor that switched, in
     place of KWin's Slide, which mmsimpulse-shortcuts turns off meanwhile.
+    A layer whose namespace matches one of NoAnimLayers (a JSON list of
+    regular expressions, from hl.layer_rule's no_anim) is not animated.
 
     SPDX-License-Identifier: GPL-2.0-or-later
 */
@@ -27,10 +29,16 @@
 #include "effect/timeline.h"
 #include "options.h"
 #include "virtualdesktops.h"
+#include "wayland/layershell_v1.h"
+#include "wayland/surface.h"
+#include "wayland_server.h"
 #include "window.h"
 
 #include <KConfigGroup>
 #include <QHash>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QRegularExpression>
 
 #include <algorithm>
 #include <array>
@@ -49,6 +57,17 @@ public:
     HyprAnimationsEffect()
     {
         reconfigure(ReconfigureAll);
+        // A layer's namespace is known only to its layer surface; keep it from
+        // the moment the surface is made, before its window is added.
+        for (LayerShellV1Interface *shell : waylandServer()->findChildren<LayerShellV1Interface *>()) {
+            connect(shell, &LayerShellV1Interface::surfaceCreated, this, [this](LayerSurfaceV1Interface *layer) {
+                SurfaceInterface *surface = layer->surface();
+                m_scopes[surface] = layer->scope();
+                connect(surface, &SurfaceInterface::aboutToBeDestroyed, this, [this, surface] {
+                    m_scopes.remove(surface);
+                });
+            });
+        }
         connect(effects, &EffectsHandler::windowAdded, this, [this](EffectWindow *w) {
             start(w, true);
         });
@@ -57,6 +76,7 @@ public:
         });
         connect(effects, &EffectsHandler::windowDeleted, this, [this](EffectWindow *w) {
             m_running.remove(w);
+            m_still.remove(w);
             // Let go of it now, as KWin's Slide does: the reference outliving
             // the window crashed KWin when the switch ended.
             for (auto &entry : m_switches) {
@@ -154,6 +174,14 @@ public:
         m_fadeLayers = {leaf(g, "FadeLayersOut"), leaf(g, "FadeLayersIn")};
         m_layerOn = g.readEntry("Layers", false);
         m_workspaces = {leaf(g, "WorkspacesOut"), leaf(g, "WorkspacesIn")};
+        m_noAnim.clear();
+        const QJsonArray list = QJsonDocument::fromJson(g.readEntry("NoAnimLayers", QString()).toUtf8()).array();
+        for (const QJsonValue &v : list) {
+            QRegularExpression re(v.toString());
+            if (re.isValid()) {
+                m_noAnim << re;
+            }
+        }
     }
 
 private:
@@ -217,6 +245,16 @@ private:
         }
         const bool layer = isLayer(w);
         if (layer ? !m_layerOn : !isAppWindow(w)) {
+            return;
+        }
+        // Decided when it opens: by the time it closes its layer surface may be gone.
+        if (layer && in) {
+            const QString scope = m_scopes.value(w->surface());
+            if (std::ranges::any_of(m_noAnim, [&](const QRegularExpression &re) { return re.match(scope).hasMatch(); })) {
+                m_still.insert(w);
+            }
+        }
+        if (m_still.contains(w)) {
             return;
         }
         if (!w->isVisible() || (!in && w->skipsCloseAnimation())) {
@@ -464,6 +502,9 @@ private:
     QList<quint64> m_fading;
     bool m_layerOn = false;
     QHash<EffectWindow *, QList<quint64>> m_running;
+    QList<QRegularExpression> m_noAnim;
+    QHash<SurfaceInterface *, QString> m_scopes;
+    QSet<EffectWindow *> m_still; // layers that match NoAnimLayers
 };
 
 KWIN_EFFECT_FACTORY_SUPPORTED(HyprAnimationsEffect, "animations.json", return HyprAnimationsEffect::supported();)

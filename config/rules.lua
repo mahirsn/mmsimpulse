@@ -29,3 +29,9 @@
 -- mms.window_rule({ name = "pictures", match = { class = "^(imv|org.kde.gwenview)$" }, center = true, size = "1200 800" })
 -- mms.window_rule({ name = "passwords", match = { class = "^(proton-pass|Proton Pass|org.keepassxc.KeePassXC)$" }, no_screen_share = true })
 -- mms.window_rule({ name = "music", match = { class = "^spotify$" }, workspace = "9" })
+--
+-- Layer rules, as Hyprland's hl.layer_rule: panels, bars and launchers, by
+-- their namespace (a regular expression; `hyprctl layers` names them on
+-- Hyprland). Only no_anim is taken: the layer opens and closes without the
+-- layers animations of animations.lua.
+-- mms.layer_rule({ name = "selection", match = { namespace = "^selection$" }, no_anim = true })

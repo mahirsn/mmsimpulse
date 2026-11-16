@@ -78,7 +78,7 @@ mms.animation({ leaf = "windowsIn", enabled = true, speed = 3, bezier = "snappy"
 mms.shell("dux")                                          -- the shell to start
 ```
 
-`hl.*` works too (`hl.bind`, `hl.config`, `hl.monitor`, `hl.env`, `hl.window_rule`, `hl.curve`, `hl.animation`, `hl.on("hyprland.start", ...)`), so Hyprland Lua files can be copied in, or taken in where they are:
+`hl.*` works too (`hl.bind`, `hl.config`, `hl.monitor`, `hl.env`, `hl.window_rule`, `hl.layer_rule` (no_anim), `hl.curve`, `hl.animation`, `hl.on("hyprland.start", ...)`), so Hyprland Lua files can be copied in, or taken in where they are:
 
 ```lua
 mms.source("~/.config/hypr/keybinds.lua")                                   -- one file, all of it

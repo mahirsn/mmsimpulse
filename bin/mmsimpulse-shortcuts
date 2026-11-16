@@ -416,7 +416,27 @@ ANIM_KEYS = {"windowsIn": "WindowsIn", "windowsOut": "WindowsOut", "fadeIn": "Fa
 ANIM_LAYERS = {"layers", "layersIn", "layersOut", "fadeLayers", "fadeLayersIn", "fadeLayersOut"}
 
 
-def animation_keys(sets, log):
+def no_anim_layers(layer_rules, log):
+    """The namespaces (regular expressions) of hl.layer_rule's no_anim rules."""
+    out = []
+    for r in layer_rules:
+        name = r.get("name") or "rule"
+        match = r.get("match") if isinstance(r.get("match"), dict) else {}
+        other = [k for k in match if k != "namespace"]
+        if other or "namespace" not in match:
+            print("mmsimpulse-shortcuts: layer rule %r matches on %s; only namespace is matched; left out" %
+                  (name, ", ".join(other) or "nothing"), file=log)
+            continue
+        skipped = [k for k in r if k not in ("name", "match", "no_anim")]
+        if skipped:
+            print("mmsimpulse-shortcuts: layer rule %r: %s has no KWin counterpart; left out" %
+                  (name, ", ".join(skipped)), file=log)
+        if BOOL(r.get("no_anim", False)) == "true":
+            out.append(str(match["namespace"]))
+    return out
+
+
+def animation_keys(sets, log, layer_rules=()):
     """kwinrc values that turn on and set mmsimpulse's animation effect."""
     nodes = {k[10:]: v for k, v in sets.items() if k.startswith("animation.") and isinstance(v, dict)}
     if not nodes:
@@ -438,6 +458,9 @@ def animation_keys(sets, log):
     # The effect switches workspaces in place of KWin's Slide.
     want = {"kwinrc\x1fPlugins\x1f%sEnabled" % ANIMATIONS: "true", "kwinrc\x1fPlugins\x1fslideEnabled": "false",
             group + "Layers": "true" if ANIM_LAYERS & set(nodes) else "false"}
+    still = no_anim_layers(layer_rules, log)
+    if still:
+        want[group + "NoAnimLayers"] = json.dumps(still)
     for leaf, key in ANIM_KEYS.items():
         node = leaf
         while node not in nodes and node != "global":
@@ -578,7 +601,7 @@ def apply_settings(lines, state, log):
         elif key not in RULE_KEYS and section not in ("animation", "curve", "power") \
                 and not (section == "input" and name.split(".")[-1] in DEVICE_KEYS):
             print("mmsimpulse-shortcuts: %s has no KWin counterpart; left out" % key, file=log)
-    want.update(animation_keys(sets, log))
+    want.update(animation_keys(sets, log, [json.loads(l[10:]) for l in lines if l.startswith("layerrule ")]))
     want.update(power_keys(sets, log))
     if any(k.startswith("kxkbrc") for k in want):
         want.setdefault("kxkbrc\x1fLayout\x1fUse", "true")
